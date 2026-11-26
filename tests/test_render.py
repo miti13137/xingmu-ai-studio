@@ -43,3 +43,30 @@ class RenderTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class VoiceTest(unittest.TestCase):
+    def test_voice_is_mixed_at_offset_and_overlong_rejected(self):
+        import array
+        import math
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=blue:s=160x90:r=25:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(root/'clip.mp4')], check=True)
+            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.5', str(root/'voice.wav')], check=True)
+            manifest = root / 'project.json'
+            project = {'ratio': '16:9', 'shots': [{'video': 'clip.mp4', 'voice': 'voice.wav', 'voice_offset': 0.5, 'dialogue': '你好'}]}
+            manifest.write_text(json.dumps(project, ensure_ascii=False), encoding='utf8')
+            output = root/'result.mp4'
+            render(manifest, output)
+            samples = array.array('h')
+            samples.frombytes(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(output), '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-f', 's16le', '-']))
+            def rms(start, end):
+                segment = samples[int(start*16000):int(end*16000)]
+                return math.sqrt(sum(x*x for x in segment)/len(segment))
+            self.assertLess(rms(.05, .3), 100)
+            self.assertGreater(rms(.6, .85), 300)
+            self.assertLess(rms(1.2, 1.5), 100)
+            project['shots'][0]['voice_offset'] = 1.8
+            manifest.write_text(json.dumps(project), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, '超過影片'):
+                render(manifest, root/'overlong.mp4')
+            self.assertFalse((root/'overlong.mp4').exists())
