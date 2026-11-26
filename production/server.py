@@ -75,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self.end_headers()
             return self.wfile.write(data)
-        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|music))?', path)
+        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|voice-[0-9]+|music))?', path)
         if not match:
             return self.reply(404, {'error': '找不到頁面'})
         with LOCK:
@@ -101,10 +101,13 @@ class Handler(BaseHTTPRequestHandler):
                 if job['manifest'].get('music') != name:
                     return self.reply(404, {'error': '找不到音樂'})
             else:
-                index = int(asset.removeprefix('clip-'))
+                kind, raw_index = asset.split('-', 1)
+                index = int(raw_index)
                 if index >= len(job['manifest']['shots']):
                     return self.reply(404, {'error': '找不到鏡頭'})
-                name = f'clip-{index}.bin'
+                name = f'{kind}-{index}.bin'
+                if kind == 'voice' and job['manifest']['shots'][index].get('voice') != name:
+                    return self.reply(404, {'error': '找不到配音'})
             output = job['dir'] / name
             content_type, filename = 'application/octet-stream', name
         if not output.is_file():
@@ -151,6 +154,12 @@ class Handler(BaseHTTPRequestHandler):
                 folder = Path(DATA.name) / ident
                 folder.mkdir()
                 manifest = {'ratio': config['ratio'], 'shots': [{'video': f'clip-{i}.bin', 'dialogue': shot.get('dialogue', '')} for i, shot in enumerate(shots)]}
+                for index, item in enumerate(shots):
+                    offset = item.get('voice_offset', 0)
+                    if isinstance(offset, bool) or not isinstance(offset, (int, float)) or not 0 <= offset <= 3600:
+                        folder.rmdir()
+                        raise ValueError('配音開始時間不正確')
+                    manifest['shots'][index]['voice_offset'] = offset
                 if config.get('project') is not None:
                     manifest['project'] = config['project']
                 try:
@@ -161,10 +170,10 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     JOBS[ident] = {'dir': folder, 'manifest': manifest, 'status': 'uploading', 'error': ''}
                 return self.reply(201, {'id': ident})
-            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|music|render|backup)', path)
+            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|voice/([0-9]+)|music|render|backup)', path)
             if not match:
                 return self.reply(404, {'error': '找不到操作'})
-            ident, operation, index = match.groups()
+            ident, operation, clip_index, voice_index = match.groups()
             with LOCK:
                 job = JOBS.get(ident)
                 if not job:
@@ -191,10 +200,10 @@ class Handler(BaseHTTPRequestHandler):
             if operation == 'music':
                 name = 'music.bin'
             else:
-                i = int(index)
+                i = int(clip_index if clip_index is not None else voice_index)
                 if i >= len(job['manifest']['shots']):
                     raise ValueError('鏡頭編號錯誤')
-                name = f'clip-{i}.bin'
+                name = f'{"clip" if clip_index is not None else "voice"}-{i}.bin'
             payload = self.read_body(MAX_FILE)
             if not payload:
                 raise ValueError('檔案是空的')
@@ -204,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
                 (job['dir'] / name).write_bytes(payload)
                 if operation == 'music':
                     job['manifest']['music'] = name
+                elif voice_index is not None:
+                    job['manifest']['shots'][i]['voice'] = name
             return self.reply(200, {'ok': True})
         except (ValueError, UnicodeError, json.JSONDecodeError, OSError) as exc:
             return self.reply(400, {'error': str(exc)})
