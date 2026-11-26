@@ -2,6 +2,7 @@
 """Render supplied video clips to MP4. This module does not generate AI media."""
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -65,7 +66,30 @@ def render(manifest_path, output):
             args = ['ffmpeg', '-v', 'error', '-y', '-i', str(video)]
             if not has_audio:
                 args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
-            args += ['-map', '0:v:0', '-map', '0:a:0' if has_audio else '1:a:0', '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-t', str(duration), '-movflags', '+faststart', str(segment)]
+            voice_value = shot.get('voice')
+            base_audio = '0:a:0' if has_audio else '1:a:0'
+            if voice_value:
+                voice = (basedir / voice_value).resolve()
+                if not voice.is_file():
+                    raise ValueError(f'找不到鏡頭 {i+1} 的配音')
+                voice_info = probe(voice)
+                if not any(x['codec_type'] == 'audio' for x in voice_info.get('streams', [])):
+                    raise ValueError(f'鏡頭 {i+1} 的配音沒有音訊')
+                voice_duration = float(voice_info['format']['duration'])
+                offset = shot.get('voice_offset', 0)
+                if isinstance(offset, bool) or not isinstance(offset, (int, float)) or not math.isfinite(offset) or offset < 0 or offset >= duration:
+                    raise ValueError(f'鏡頭 {i+1} 的配音開始時間不正確')
+                if not math.isfinite(voice_duration) or voice_duration <= 0 or offset + voice_duration > duration + 0.05:
+                    raise ValueError(f'鏡頭 {i+1} 的配音長度超過影片；請縮短配音或更換較長鏡頭')
+                voice_index = 1 if has_audio else 2
+                args += ['-i', str(voice)]
+                delay = round(offset * 1000)
+                filters = f'[{base_audio}]apad=whole_dur={duration}[base];[{voice_index}:a:0]adelay={delay}:all=1,apad=whole_dur={duration}[voice];[base][voice]amix=inputs=2:duration=first:normalize=0[a]'
+                args += ['-filter_complex', filters, '-map', '0:v:0', '-map', '[a]']
+                shot['_voice_duration'] = voice_duration
+            else:
+                args += ['-map', '0:v:0', '-map', base_audio]
+            args += ['-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-t', str(duration), '-movflags', '+faststart', str(segment)]
             run(args)
             segments.append(segment)
             durations.append(duration)
@@ -78,7 +102,9 @@ def render(manifest_path, output):
         for i, (shot, duration) in enumerate(zip(shots, durations)):
             text = str(shot.get('dialogue', '')).strip().replace('\r', '')
             if text:
-                cues.append(f'{len(cues)+1}\n{timestamp(start)} --> {timestamp(start+duration)}\n{text}\n')
+                cue_start = start + (shot.get('voice_offset', 0) if shot.get('_voice_duration') else 0)
+                cue_end = min(start + duration, cue_start + shot.get('_voice_duration', duration))
+                cues.append(f'{len(cues)+1}\n{timestamp(cue_start)} --> {timestamp(cue_end)}\n{text}\n')
             start += duration
         srt = temp / 'captions.srt'
         srt.write_text('\n'.join(cues), encoding='utf-8')
