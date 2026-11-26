@@ -1,6 +1,7 @@
 """Portable media archive support for local Xingmu workbench projects."""
 import io
 import json
+import math
 import re
 import shutil
 import zipfile
@@ -22,7 +23,14 @@ def validate_manifest(raw):
     for i, item in enumerate(shots):
         if not isinstance(item, dict) or item.get('video') != f'clip-{i}.bin' or not isinstance(item.get('dialogue'), str) or len(item['dialogue']) > 2000:
             raise ValueError('備份中的鏡頭資料不正確')
-        result.append({'video': f'clip-{i}.bin', 'dialogue': item['dialogue']})
+        shot = {'video': f'clip-{i}.bin', 'dialogue': item['dialogue']}
+        voice = item.get('voice')
+        offset = item.get('voice_offset', 0)
+        if voice is not None:
+            if voice != f'voice-{i}.bin' or isinstance(offset, bool) or not isinstance(offset, (int, float)) or not math.isfinite(offset) or not 0 <= offset <= 3600:
+                raise ValueError('備份中的配音資料不正確')
+            shot['voice'], shot['voice_offset'] = voice, offset
+        result.append(shot)
     music = raw.get('music')
     if music not in (None, 'music.bin'):
         raise ValueError('備份中的音樂檔案名稱不正確')
@@ -42,7 +50,7 @@ def create_backup(job):
     manifest = dict(job['manifest'])
     manifest['version'] = 1
     validate_manifest(manifest)
-    files = [x['video'] for x in manifest['shots']]
+    files = [x['video'] for x in manifest['shots']] + [x['voice'] for x in manifest['shots'] if x.get('voice')]
     if manifest.get('music'):
         files.append('music.bin')
     if any(not (folder / name).is_file() for name in files):
@@ -78,7 +86,7 @@ def restore_backup(data, target):
             if project_info.file_size > MAX_MANIFEST:
                 raise ValueError('專案資料過大')
             manifest = validate_manifest(json.loads(archive.read(project_info).decode('utf8')))
-            expected = {'project.json'} | {shot['video'] for shot in manifest['shots']}
+            expected = {'project.json'} | {shot['video'] for shot in manifest['shots']} | {shot['voice'] for shot in manifest['shots'] if shot.get('voice')}
             if manifest.get('music'):
                 expected.add('music.bin')
             if set(names) != expected:
