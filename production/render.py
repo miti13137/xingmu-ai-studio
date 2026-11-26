@@ -9,6 +9,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+try:
+    from . import lip_sync
+except ImportError:
+    import lip_sync
+
 
 def run(args):
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -76,11 +81,13 @@ def render(manifest_path, output):
                 frames = round(seconds * 25)
                 duration = frames / 25
                 motion = shot.get('image_motion', 'still')
-                if motion not in ('still', 'push'):
+                if motion not in ('still', 'push', 'talk'):
                     raise ValueError(f'鏡頭 {i+1} 的圖片運鏡設定不正確')
-                zoom = f'1+0.12*on/{frames - 1}' if motion == 'push' else '1'
-                vf += f",zoompan=z='{zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={width}x{height}:fps=25"
-                args += ['-f', image_demuxer(video)]
+                input_format = ['-f', image_demuxer(video)]
+                if motion != 'talk':
+                    zoom = f'1+0.12*on/{frames - 1}' if motion == 'push' else '1'
+                    vf += f",zoompan=z='{zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={width}x{height}:fps=25"
+                    args += input_format
                 has_audio = False
             else:
                 info = probe(video)
@@ -91,12 +98,10 @@ def render(manifest_path, output):
                     raise ValueError(f'鏡頭 {i+1} 長度無效')
                 has_audio = any(s['codec_type'] == 'audio' for s in info.get('streams', []))
                 vf += ',fps=25'
-            vf += ',format=yuv420p'
-            args += ['-i', str(video)]
-            if not has_audio:
-                args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
             voice_value = shot.get('voice')
-            base_audio = '0:a:0' if has_audio else '1:a:0'
+            talking = 'image_seconds' in shot and shot.get('image_motion') == 'talk'
+            if talking and not voice_value:
+                raise ValueError(f'鏡頭 {i+1} 的嘴型同步需要配音')
             if voice_value:
                 voice = (basedir / voice_value).resolve()
                 if not voice.is_file():
@@ -110,12 +115,33 @@ def render(manifest_path, output):
                     raise ValueError(f'鏡頭 {i+1} 的配音開始時間不正確')
                 if not math.isfinite(voice_duration) or voice_duration <= 0 or offset + voice_duration > duration + 0.05:
                     raise ValueError(f'鏡頭 {i+1} 的配音長度超過影片；請縮短配音或更換較長鏡頭')
+                if talking:
+                    workdir = temp / f'talk-{i:05}'
+                    workdir.mkdir()
+                    portrait, speech = workdir / 'portrait.png', workdir / 'dialogue.wav'
+                    run(['ffmpeg', '-v', 'error', *input_format, '-i', str(video),
+                         '-frames:v', '1', str(portrait)])
+                    run(['ffmpeg', '-v', 'error', '-i', str(voice), '-vn', '-ac', '1',
+                         '-ar', '16000', '-c:a', 'pcm_s16le', str(speech)])
+                    try:
+                        video = lip_sync.animate(portrait, speech, workdir)
+                    except ValueError as exc:
+                        raise ValueError(f'鏡頭 {i+1}：{exc}') from exc
+                    # Pad the generated frames to match the original voice track and shot length.
+                    vf += f',fps=25,tpad=start_mode=clone:start_duration={offset}:stop_mode=clone:stop_duration={duration}'
+                shot['_voice_duration'] = voice_duration
+
+            vf += ',format=yuv420p'
+            args += ['-i', str(video)]
+            if not has_audio:
+                args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
+            base_audio = '0:a:0' if has_audio else '1:a:0'
+            if voice_value:
                 voice_index = 1 if has_audio else 2
                 args += ['-i', str(voice)]
                 delay = round(offset * 1000)
                 filters = f'[{base_audio}]apad=whole_dur={duration}[base];[{voice_index}:a:0]adelay={delay}:all=1,apad=whole_dur={duration}[voice];[base][voice]amix=inputs=2:duration=first:normalize=0[a]'
                 args += ['-filter_complex', filters, '-map', '0:v:0', '-map', '[a]']
-                shot['_voice_duration'] = voice_duration
             else:
                 args += ['-map', '0:v:0', '-map', base_audio]
             args += ['-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-t', str(duration), '-movflags', '+faststart', str(segment)]

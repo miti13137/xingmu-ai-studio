@@ -116,7 +116,7 @@ class ServerTest(unittest.TestCase):
     def test_backup_restore_roundtrip_and_malicious_zip(self):
         import io
         import zipfile
-        config = {'ratio': '16:9', 'project': {'name': '霓虹舊夢', 'script': '原始劇本', 'characters': [{'name': '曼菁'}]}, 'shots': [{'dialogue': '第一鏡', 'voice_offset': 0.5}, {'dialogue': '第二鏡'}]}
+        config = {'ratio': '16:9', 'project': {'name': '霓虹舊夢', 'script': '原始劇本', 'characters': [{'name': '曼菁'}]}, 'shots': [{'dialogue': '第一鏡', 'voice_offset': 0.5}, {'dialogue': '第二鏡', 'image_seconds': 3, 'image_motion': 'talk'}]}
         status, payload = self.request('POST', '/api/jobs', json.dumps(config, ensure_ascii=False).encode())
         self.assertEqual(status, 201)
         base = '/api/jobs/' + json.loads(payload)['id']
@@ -138,6 +138,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request('GET', restored_base + '/asset/music')[1], b'music-bytes')
         self.assertEqual(self.request('GET', restored_base + '/asset/voice-0')[1], b'voice-bytes')
         self.assertEqual(restored['manifest']['shots'][0]['voice_offset'], 0.5)
+        self.assertEqual(restored['manifest']['shots'][1]['image_motion'], 'talk')
         mal = io.BytesIO()
         with zipfile.ZipFile(mal, 'w') as archive_file:
             archive_file.writestr('project.json', json.dumps({'version': 1, 'ratio': '9:16', 'shots': [{'video': 'clip-0.bin', 'dialogue': ''}]}))

@@ -22,7 +22,7 @@ def image_settings(shot):
         return {}
     if type(duration) not in (int, float) or not 1 <= duration <= 120:
         raise ValueError('圖片鏡頭長度須介於 1 至 120 秒')
-    if motion not in ('still', 'push'):
+    if motion not in ('still', 'push', 'talk'):
         raise ValueError('圖片運鏡設定不正確')
     return {'image_seconds': duration, 'image_motion': motion}
 

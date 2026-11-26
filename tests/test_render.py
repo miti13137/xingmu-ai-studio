@@ -70,3 +70,74 @@ class VoiceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '超過影片'):
                 render(manifest, root/'overlong.mp4')
             self.assertFalse((root/'overlong.mp4').exists())
+
+
+class TalkingShotTest(unittest.TestCase):
+    def test_talking_shot_requires_engine_and_muxes_generated_video(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run([
+                'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=s=160x90',
+                '-frames:v', '1', str(root / 'portrait.png'),
+            ], check=True)
+            subprocess.run([
+                'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=0.5',
+                str(root / 'voice.wav'),
+            ], check=True)
+            manifest = root / 'project.json'
+            shot = {
+                'video': 'portrait.png', 'image_seconds': 2, 'image_motion': 'talk',
+                'voice_offset': 0.4, 'dialogue': '我回來了。',
+            }
+            output = root / 'result.mp4'
+
+            def save():
+                manifest.write_text(json.dumps({'shots': [shot]}), encoding='utf-8')
+
+            save()
+            with self.assertRaisesRegex(ValueError, '需要配音'):
+                render(manifest, output)
+            shot['voice'] = 'voice.wav'
+            save()
+            with patch.dict('os.environ', {'XINGMU_SADTALKER_DIR': ''}):
+                with self.assertRaisesRegex(ValueError, '尚未設定本機 SadTalker'):
+                    render(manifest, output)
+            self.assertFalse(output.exists())
+
+            # Model stand-in exercises the actual process and media handoff.
+            engine = root / 'local model'
+            engine.mkdir()
+            (engine / 'checkpoints').mkdir()
+            (engine / 'inference.py').write_text("""
+import argparse
+import subprocess
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--source_image', type=Path, required=True)
+parser.add_argument('--driven_audio', type=Path, required=True)
+parser.add_argument('--result_dir', type=Path, required=True)
+parser.add_argument('--preprocess', choices=['full'], required=True)
+parser.add_argument('--batch_size', choices=['1'], required=True)
+parser.add_argument('--still', action='store_true')
+parser.add_argument('--cpu', action='store_true')
+args = parser.parse_args()
+assert args.still and args.cpu and args.source_image.is_file()
+assert args.driven_audio.read_bytes().startswith(b'RIFF')
+args.result_dir.mkdir()
+subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+                'testsrc=s=160x90:r=25:d=0.5', '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p', str(args.result_dir / 'sample.mp4')], check=True)
+""", encoding='utf-8')
+            with patch.dict('os.environ', {
+                'XINGMU_SADTALKER_DIR': str(engine),
+                'XINGMU_SADTALKER_PYTHON': sys.executable,
+            }):
+                render(manifest, output)
+            info = json.loads(subprocess.check_output([
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=nb_frames', '-of', 'json', str(output),
+            ]))
+            self.assertEqual(int(info['streams'][0]['nb_frames']), 50)

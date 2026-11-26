@@ -30,6 +30,7 @@ function addShot(dialogue='',restored=null,voice=null,offset=0,imageSeconds=null
     motion.className = 'image-motion';
     motion.add(new Option('固定畫面', 'still'));
     motion.add(new Option('緩慢推近', 'push'));
+    motion.add(new Option('角色嘴型同步（需要本機模型與配音）', 'talk'));
     motion.value = imageMotion;
     motionLabel.append(motion);
     imageOptions.append(secondsLabel, motionLabel);
@@ -137,7 +138,7 @@ document.querySelector('#use-story').onclick=()=>{if(generatedProject){if([...sh
 async function poll(id){for(;;){await new Promise(r=>setTimeout(r,1500));let res=await fetch('/api/jobs/'+id,{cache:'no-store'});let data=await res.json();if(!res.ok)throw Error(data.error);if(data.status==='done')return;if(data.status==='error')throw Error(data.error||'合成失敗')}}
 document.querySelector('#clear-music').onclick=()=>{document.querySelector('#music').value='';restoredMusic=null;document.querySelector('#music-restored').textContent=''};
 async function material(value){if(value instanceof Blob)return value;let response=await fetch(value,{cache:'no-store'});if(!response.ok)throw Error('無法讀取已恢復的素材');return response.blob()}
-async function prepareJob() {
+async function prepareJob({forRender = false} = {}) {
     const rows = [...shots.children];
     const sources = rows.map(row => row.querySelector('.video-file').files[0] || row.restoredAsset);
     if (sources.some(source => !source)) throw Error('請為每個鏡頭選擇影片或圖片');
@@ -156,6 +157,8 @@ async function prepareJob() {
         return shot;
     });
     const voices = rows.map(row => row.querySelector('.voice-file').files[0] || row.generatedVoice || row.restoredVoice);
+    const missingVoice = configuration.findIndex((shot, i) => shot.image_motion === 'talk' && !voices[i]);
+    if (forRender && missingVoice >= 0) throw Error(`鏡頭 ${missingVoice + 1} 的嘴型同步需要配音`);
     const music = document.querySelector('#music').files[0] || restoredMusic;
     const config = {ratio: document.querySelector('#ratio').value, shots: configuration, project: sourceProject};
     const {id} = await post('/api/jobs', JSON.stringify(config), 'application/json');
@@ -174,7 +177,7 @@ async function prepareJob() {
     return id;
 }
 function busy(on){renderBtn.disabled=on;document.querySelector('#backup').disabled=on;document.querySelector('#restore').disabled=on}
-renderBtn.onclick=async()=>{try{busy(true);download.hidden=true;statusEl.textContent='建立合成工作…';const id=await prepareJob();statusEl.textContent='影片合成中，請保持視窗及本機程式開啟…';await post(`/api/jobs/${id}/render`,'','application/octet-stream');await poll(id);download.href=`/api/jobs/${id}/download`;download.hidden=false;statusEl.textContent='合成完成，請下載並播放確認。'}catch(e){statusEl.textContent='無法完成：'+e.message}finally{busy(false)}};
+renderBtn.onclick=async()=>{try{busy(true);download.hidden=true;statusEl.textContent='建立合成工作…';const id=await prepareJob({forRender:true});statusEl.textContent='影片合成中，請保持視窗及本機程式開啟…';await post(`/api/jobs/${id}/render`,'','application/octet-stream');await poll(id);download.href=`/api/jobs/${id}/download`;download.hidden=false;statusEl.textContent='合成完成，請下載並播放確認。'}catch(e){statusEl.textContent='無法完成：'+e.message}finally{busy(false)}};
 document.querySelector('#backup').onclick=async()=>{try{busy(true);const link=document.querySelector('#backup-download');link.hidden=true;statusEl.textContent='準備專案備份…';const id=await prepareJob();await post(`/api/jobs/${id}/backup`,'','application/octet-stream');link.href=`/api/jobs/${id}/backup-file`;link.hidden=false;statusEl.textContent='備份已準備完成，請點「下載專案備份」儲存。'}catch(e){statusEl.textContent='備份失敗：'+e.message}finally{busy(false)}};
 document.querySelector('#restore').onclick=async()=>{const el=document.querySelector('#restore-status');try{const file=document.querySelector('#restore-file').files[0];if(!file)throw Error('請先選擇 ZIP 備份');if(file.size>220*1024*1024)throw Error('備份檔案過大');if(!confirm('恢復備份會取代目前畫面上的鏡頭、字幕及選擇的音樂。確定繼續？'))return;busy(true);el.textContent='正在恢復…';const data=await post('/api/restore',file,'application/zip'),m=data.manifest;shots.replaceChildren();m.shots.forEach((shot,i)=>addShot(shot.dialogue,`/api/jobs/${data.id}/asset/clip-${i}`,shot.voice?`/api/jobs/${data.id}/asset/voice-${i}`:null,shot.voice_offset||0,shot.image_seconds??null,shot.image_motion));document.querySelector('#ratio').value=m.ratio;sourceProject=m.project||null;document.querySelector('#music').value='';restoredMusic=m.music?`/api/jobs/${data.id}/asset/music`:null;document.querySelector('#music-restored').textContent=restoredMusic?'已恢復背景音樂；重新選擇可更換。':'';el.textContent='已恢復備份，可繼續合成或重新備份。';statusEl.textContent='已恢復專案';}catch(e){el.textContent='恢復失敗：'+e.message}finally{busy(false)}};
 </script></body></html>
