@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from render import render
 import story_ai
+import archive as project_archive
 
 ROOT = Path(__file__).resolve().parent
 MAX_FILE = 100 * 1024 * 1024
@@ -74,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self.end_headers()
             return self.wfile.write(data)
-        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download)?', path)
+        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|music))?', path)
         if not match:
             return self.reply(404, {'error': '找不到頁面'})
         with LOCK:
@@ -84,12 +85,33 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': '找不到製片工作'})
         if not match.group(2):
             return self.reply(200, state)
-        if state['status'] != 'done':
-            return self.reply(409, {'error': '影片尚未完成'})
-        output = job['dir'] / 'result.mp4'
+        operation = match.group(2)
+        if operation == '/download':
+            if state['status'] != 'done':
+                return self.reply(409, {'error': '影片尚未完成'})
+            output = job['dir'] / 'result.mp4'
+            content_type, filename = 'video/mp4', 'xingmu-film.mp4'
+        elif operation == '/backup-file':
+            output = job['dir'] / 'backup.zip'
+            content_type, filename = 'application/zip', 'xingmu-project.zip'
+        else:
+            asset = operation.removeprefix('/asset/')
+            if asset == 'music':
+                name = 'music.bin'
+                if job['manifest'].get('music') != name:
+                    return self.reply(404, {'error': '找不到音樂'})
+            else:
+                index = int(asset.removeprefix('clip-'))
+                if index >= len(job['manifest']['shots']):
+                    return self.reply(404, {'error': '找不到鏡頭'})
+                name = f'clip-{index}.bin'
+            output = job['dir'] / name
+            content_type, filename = 'application/octet-stream', name
+        if not output.is_file():
+            return self.reply(404, {'error': '找不到檔案'})
         self.send_response(200)
-        self.send_header('Content-Type', 'video/mp4')
-        self.send_header('Content-Disposition', 'attachment; filename="xingmu-film.mp4"')
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
         self.send_header('Content-Length', str(output.stat().st_size))
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
@@ -102,6 +124,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {'error': '連線來源不符'})
         path = urlsplit(self.path).path
         try:
+            if path == '/api/restore':
+                payload = self.read_body(project_archive.MAX_ARCHIVE)
+                ident = uuid.uuid4().hex
+                folder = Path(DATA.name) / ident
+                manifest = project_archive.restore_backup(payload, folder)
+                with LOCK:
+                    JOBS[ident] = {'dir': folder, 'manifest': manifest, 'status': 'uploading', 'error': ''}
+                return self.reply(201, {'id': ident, 'manifest': manifest})
             if path == '/api/story/generate':
                 config = json.loads(self.read_body(16 * 1024).decode('utf8'))
                 if not isinstance(config, dict):
@@ -121,10 +151,17 @@ class Handler(BaseHTTPRequestHandler):
                 folder = Path(DATA.name) / ident
                 folder.mkdir()
                 manifest = {'ratio': config['ratio'], 'shots': [{'video': f'clip-{i}.bin', 'dialogue': shot.get('dialogue', '')} for i, shot in enumerate(shots)]}
+                if config.get('project') is not None:
+                    manifest['project'] = config['project']
+                try:
+                    project_archive.validate_manifest({**manifest, 'version': 1})
+                except ValueError:
+                    folder.rmdir()
+                    raise
                 with LOCK:
                     JOBS[ident] = {'dir': folder, 'manifest': manifest, 'status': 'uploading', 'error': ''}
                 return self.reply(201, {'id': ident})
-            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|music|render)', path)
+            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|music|render|backup)', path)
             if not match:
                 return self.reply(404, {'error': '找不到操作'})
             ident, operation, index = match.groups()
@@ -134,6 +171,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(404, {'error': '找不到製片工作'})
                 if job['status'] != 'uploading':
                     return self.reply(409, {'error': '工作已開始，不能修改'})
+            if operation == 'backup':
+                self.read_body(0)
+                with LOCK:
+                    if job['status'] != 'uploading':
+                        return self.reply(409, {'error': '工作已開始，不能修改'})
+                    project_archive.create_backup(job)
+                return self.reply(200, {'ok': True})
             if operation == 'render':
                 self.read_body(0)
                 if any(not (job['dir'] / shot['video']).is_file() for shot in job['manifest']['shots']):
