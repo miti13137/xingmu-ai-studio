@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from render import render
+import story_ai
 
 ROOT = Path(__file__).resolve().parent
 MAX_FILE = 100 * 1024 * 1024
@@ -59,6 +60,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.headers_ok():
             return self.reply(403, {'error': '連線來源不符'})
         path = urlsplit(self.path).path
+        if path == '/api/models':
+            try:
+                return self.reply(200, {'models': story_ai.models()})
+            except ValueError as exc:
+                return self.reply(503, {'error': str(exc)})
         if path == '/':
             data = (ROOT / 'workbench.html').read_text(encoding='utf8').replace('__SESSION_TOKEN__', TOKEN).encode()
             self.send_response(200)
@@ -96,6 +102,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {'error': '連線來源不符'})
         path = urlsplit(self.path).path
         try:
+            if path == '/api/story/generate':
+                config = json.loads(self.read_body(16 * 1024).decode('utf8'))
+                if not isinstance(config, dict):
+                    raise ValueError('作品資料格式錯誤')
+                project = story_ai.generate(config.get('model'), config.get('name'), config.get('idea'), config.get('ratio'), config.get('type'))
+                return self.reply(200, {'project': project})
             if path == '/api/jobs':
                 config = json.loads(self.read_body(256 * 1024).decode('utf8'))
                 if not isinstance(config, dict):
