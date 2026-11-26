@@ -37,6 +37,23 @@ class ServerTest(unittest.TestCase):
         connection.close()
         return status, data
 
+    def test_speech_delivers_wav_and_reports_absent_engine(self):
+        from unittest.mock import patch
+
+        request = json.dumps({'dialogue': '曼菁，你回來了。'}).encode()
+        wav = subprocess.check_output([
+            'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=0.2',
+            '-f', 'wav', '-',
+        ])
+        with patch.object(server.speech, 'synthesize', return_value=wav) as synthesize:
+            self.assertEqual(self.request('POST', '/api/speech', request, token=False)[0], 403)
+            self.assertEqual(self.request('POST', '/api/speech', request), (200, wav))
+            synthesize.assert_called_once_with('曼菁，你回來了。', 0)
+        with patch.object(server.speech.shutil, 'which', return_value=None):
+            status, payload = self.request('POST', '/api/speech', request)
+        self.assertEqual(status, 400)
+        self.assertIn('Windows', json.loads(payload)['error'])
+
     def test_full_render_download_and_forbidden_origin(self):
         with tempfile.TemporaryDirectory() as temp:
             clip = Path(temp) / 'clip.mp4'

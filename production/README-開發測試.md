@@ -30,3 +30,7 @@
 ## 已驗證
 
 在 Linux 測試環境執行 `python3 -m unittest discover -s tests -v`，以合成測試影片及聲音測試 API 上傳、生成、下載、帶字幕及音樂、備份與恢復、缺檔與避免覆寫；這不是《霓虹舊夢》驗收成品。真實瀏覽器操作、iOS 與 Windows 尚未驗證。
+
+## 本機國語配音
+
+Windows 上可在鏡頭輸入台詞，按「用本機國語語音生成配音」，然後直接試聽或合成。需要系統已安裝能由 Windows PowerShell 的 System.Speech 選取的國語桌面語音，優先選台灣國語。語音品質取決於 Windows 音色。音檔可以使用專案備份保存。這項功能的 HTTP 介面在 Linux 以測試 WAV 驗證，Windows 真實語音仍待實測。

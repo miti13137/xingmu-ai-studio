@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from render import render
 import story_ai
+import speech
 import archive as project_archive
 
 ROOT = Path(__file__).resolve().parent
@@ -72,7 +73,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
-            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self.end_headers()
             return self.wfile.write(data)
         match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|voice-[0-9]+|music))?', path)
@@ -127,6 +128,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {'error': '連線來源不符'})
         path = urlsplit(self.path).path
         try:
+            if path == '/api/speech':
+                config = json.loads(self.read_body(8192).decode('utf8'))
+                if not isinstance(config, dict):
+                    raise ValueError('配音資料格式錯誤')
+                wav = speech.synthesize(config.get('dialogue'), config.get('rate', 0))
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', str(len(wav)))
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                return self.wfile.write(wav)
             if path == '/api/restore':
                 payload = self.read_body(project_archive.MAX_ARCHIVE)
                 ident = uuid.uuid4().hex
