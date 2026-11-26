@@ -172,6 +172,9 @@ class Handler(BaseHTTPRequestHandler):
                         folder.rmdir()
                         raise ValueError('配音開始時間不正確')
                     manifest['shots'][index]['voice_offset'] = offset
+                    for key in ('image_seconds', 'image_motion'):
+                        if key in item:
+                            manifest['shots'][index][key] = item[key]
                 if config.get('project') is not None:
                     manifest['project'] = config['project']
                 try:
@@ -202,7 +205,7 @@ class Handler(BaseHTTPRequestHandler):
             if operation == 'render':
                 self.read_body(0)
                 if any(not (job['dir'] / shot['video']).is_file() for shot in job['manifest']['shots']):
-                    raise ValueError('尚未上傳所有鏡頭影片')
+                    raise ValueError('尚未上傳所有鏡頭素材')
                 with LOCK:
                     if job['status'] != 'uploading':
                         return self.reply(409, {'error': '工作已開始'})

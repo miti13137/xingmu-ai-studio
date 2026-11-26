@@ -27,6 +27,18 @@ def timestamp(seconds):
     return f'{h:02}:{m:02}:{s:02},{ms:03}'
 
 
+def image_demuxer(path):
+    with path.open('rb') as stream:
+        header = stream.read(12)
+    if header.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'png_pipe'
+    if header.startswith(b'\xff\xd8\xff'):
+        return 'jpeg_pipe'
+    if header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+        return 'webp_pipe'
+    raise ValueError('圖片必須是 JPG、PNG 或 WebP')
+
+
 def render(manifest_path, output):
     manifest_path = Path(manifest_path).resolve()
     project = json.loads(manifest_path.read_text(encoding='utf-8'))
@@ -54,16 +66,33 @@ def render(manifest_path, output):
             video = (basedir / shot['video']).resolve()
             if not video.is_file():
                 raise ValueError(f'找不到鏡頭 {i+1} 影片：{video}')
-            info = probe(video)
-            if not any(s['codec_type'] == 'video' for s in info.get('streams', [])):
-                raise ValueError(f'鏡頭 {i+1} 沒有影像')
-            duration = float(info['format']['duration'])
-            if not 0 < duration < 3600:
-                raise ValueError(f'鏡頭 {i+1} 長度無效')
-            has_audio = any(s['codec_type'] == 'audio' for s in info.get('streams', []))
             segment = temp / f'{i:05}.mp4'
-            vf = f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,format=yuv420p'
-            args = ['ffmpeg', '-v', 'error', '-y', '-i', str(video)]
+            vf = f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1'
+            args = ['ffmpeg', '-v', 'error', '-y']
+            if 'image_seconds' in shot:
+                seconds = shot['image_seconds']
+                if type(seconds) not in (int, float) or not 1 <= seconds <= 120:
+                    raise ValueError(f'鏡頭 {i+1} 的圖片長度須介於 1 至 120 秒')
+                frames = round(seconds * 25)
+                duration = frames / 25
+                motion = shot.get('image_motion', 'still')
+                if motion not in ('still', 'push'):
+                    raise ValueError(f'鏡頭 {i+1} 的圖片運鏡設定不正確')
+                zoom = f'1+0.12*on/{frames - 1}' if motion == 'push' else '1'
+                vf += f",zoompan=z='{zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={width}x{height}:fps=25"
+                args += ['-f', image_demuxer(video)]
+                has_audio = False
+            else:
+                info = probe(video)
+                if not any(s['codec_type'] == 'video' for s in info.get('streams', [])):
+                    raise ValueError(f'鏡頭 {i+1} 沒有影像')
+                duration = float(info['format']['duration'])
+                if not 0 < duration < 3600:
+                    raise ValueError(f'鏡頭 {i+1} 長度無效')
+                has_audio = any(s['codec_type'] == 'audio' for s in info.get('streams', []))
+                vf += ',fps=25'
+            vf += ',format=yuv420p'
+            args += ['-i', str(video)]
             if not has_audio:
                 args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
             voice_value = shot.get('voice')

@@ -58,9 +58,13 @@ class ServerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             clip = Path(temp) / 'clip.mp4'
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=blue:s=160x90:r=25:d=0.4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+            picture = subprocess.check_output([
+                'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90',
+                '-frames:v', '1', '-f', 'image2pipe', '-c:v', 'png', '-',
+            ])
             voice = Path(temp) / 'voice.wav'
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2', str(voice)], check=True)
-            config = json.dumps({'ratio': '9:16', 'shots': [{'dialogue': '曼菁：你回來了。', 'voice_offset': 0.1}]}).encode()
+            config = json.dumps({'ratio': '9:16', 'shots': [{'dialogue': '曼菁：你回來了。', 'voice_offset': 0.1}, {'image_seconds': 2, 'image_motion': 'push'}]}).encode()
             status, _ = self.request('POST', '/api/jobs', config, token=False)
             self.assertEqual(status, 403)
             status, _ = self.request('POST', '/api/jobs', config, extra={'Origin': 'https://attacker.invalid'})
@@ -71,12 +75,16 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(self.request('POST', base + '/render')[0], 400)
             self.assertEqual(self.request('POST', base + '/clip/0', clip.read_bytes())[0], 200)
             self.assertEqual(self.request('POST', base + '/voice/0', voice.read_bytes())[0], 200)
+            self.assertEqual(self.request('POST', base + '/clip/1', picture)[0], 200)
             self.assertEqual(self.request('POST', base + '/backup')[0], 200)
             status, archive = self.request('GET', base + '/backup-file')
             self.assertEqual(status, 200)
             status, payload = self.request('POST', '/api/restore', archive)
             self.assertEqual(status, 201)
-            base = '/api/jobs/' + json.loads(payload)['id']
+            restored = json.loads(payload)
+            self.assertEqual(restored['manifest']['shots'][1]['image_seconds'], 2)
+            self.assertEqual(restored['manifest']['shots'][1]['image_motion'], 'push')
+            base = '/api/jobs/' + restored['id']
             self.assertEqual(self.request('POST', base + '/render')[0], 202)
             for _ in range(100):
                 _, payload = self.request('GET', base)
@@ -87,7 +95,22 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(state['status'], 'done', state.get('error'))
             status, result = self.request('GET', base + '/download')
             self.assertEqual(status, 200)
-            self.assertIn(b'ftyp', result[:32])
+            film = Path(temp) / 'film.mp4'
+            film.write_bytes(result)
+            info = json.loads(subprocess.check_output([
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,duration,nb_frames', '-of', 'json', str(film),
+            ]))['streams'][0]
+            self.assertEqual((info['width'], info['height']), (540, 960))
+            self.assertEqual(int(info['nb_frames']), 60)
+            self.assertAlmostEqual(float(info['duration']), 2.4, delta=0.08)
+            frames = []
+            for timestamp in (0.6, 2.2):
+                frames.append(subprocess.check_output([
+                    'ffmpeg', '-v', 'error', '-ss', str(timestamp), '-i', str(film),
+                    '-map', '0:v:0', '-frames:v', '1', '-f', 'framemd5', '-',
+                ]).splitlines()[-1].split(b',')[-1])
+            self.assertNotEqual(*frames)
             self.assertEqual(self.request('POST', base + '/render')[0], 409)
 
     def test_backup_restore_roundtrip_and_malicious_zip(self):

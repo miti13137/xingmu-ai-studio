@@ -13,6 +13,20 @@ MAX_FILE = 100 * 1024 * 1024
 MAX_MANIFEST = 256 * 1024
 
 
+def image_settings(shot):
+    duration = shot.get('image_seconds')
+    motion = shot.get('image_motion', 'still')
+    if 'image_seconds' not in shot:
+        if 'image_motion' in shot:
+            raise ValueError('請指定圖片鏡頭秒數')
+        return {}
+    if type(duration) not in (int, float) or not 1 <= duration <= 120:
+        raise ValueError('圖片鏡頭長度須介於 1 至 120 秒')
+    if motion not in ('still', 'push'):
+        raise ValueError('圖片運鏡設定不正確')
+    return {'image_seconds': duration, 'image_motion': motion}
+
+
 def validate_manifest(raw):
     if not isinstance(raw, dict) or raw.get('version') != 1 or raw.get('ratio') not in ('9:16', '16:9'):
         raise ValueError('備份版本或畫面比例不正確')
@@ -23,7 +37,7 @@ def validate_manifest(raw):
     for i, item in enumerate(shots):
         if not isinstance(item, dict) or item.get('video') != f'clip-{i}.bin' or not isinstance(item.get('dialogue'), str) or len(item['dialogue']) > 2000:
             raise ValueError('備份中的鏡頭資料不正確')
-        shot = {'video': f'clip-{i}.bin', 'dialogue': item['dialogue']}
+        shot = {'video': f'clip-{i}.bin', 'dialogue': item['dialogue'], **image_settings(item)}
         voice = item.get('voice')
         offset = item.get('voice_offset', 0)
         if voice is not None:
