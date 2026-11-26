@@ -41,7 +41,9 @@ class ServerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             clip = Path(temp) / 'clip.mp4'
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=blue:s=160x90:r=25:d=0.4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(clip)], check=True)
-            config = json.dumps({'ratio': '9:16', 'shots': [{'dialogue': '曼菁：你回來了。'}]}).encode()
+            voice = Path(temp) / 'voice.wav'
+            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2', str(voice)], check=True)
+            config = json.dumps({'ratio': '9:16', 'shots': [{'dialogue': '曼菁：你回來了。', 'voice_offset': 0.1}]}).encode()
             status, _ = self.request('POST', '/api/jobs', config, token=False)
             self.assertEqual(status, 403)
             status, _ = self.request('POST', '/api/jobs', config, extra={'Origin': 'https://attacker.invalid'})
@@ -51,6 +53,7 @@ class ServerTest(unittest.TestCase):
             base = '/api/jobs/' + json.loads(payload)['id']
             self.assertEqual(self.request('POST', base + '/render')[0], 400)
             self.assertEqual(self.request('POST', base + '/clip/0', clip.read_bytes())[0], 200)
+            self.assertEqual(self.request('POST', base + '/voice/0', voice.read_bytes())[0], 200)
             self.assertEqual(self.request('POST', base + '/backup')[0], 200)
             status, archive = self.request('GET', base + '/backup-file')
             self.assertEqual(status, 200)
@@ -73,13 +76,14 @@ class ServerTest(unittest.TestCase):
     def test_backup_restore_roundtrip_and_malicious_zip(self):
         import io
         import zipfile
-        config = {'ratio': '16:9', 'project': {'name': '霓虹舊夢', 'script': '原始劇本', 'characters': [{'name': '曼菁'}]}, 'shots': [{'dialogue': '第一鏡'}, {'dialogue': '第二鏡'}]}
+        config = {'ratio': '16:9', 'project': {'name': '霓虹舊夢', 'script': '原始劇本', 'characters': [{'name': '曼菁'}]}, 'shots': [{'dialogue': '第一鏡', 'voice_offset': 0.5}, {'dialogue': '第二鏡'}]}
         status, payload = self.request('POST', '/api/jobs', json.dumps(config, ensure_ascii=False).encode())
         self.assertEqual(status, 201)
         base = '/api/jobs/' + json.loads(payload)['id']
         for i, data in enumerate((b'video-one', b'video-two')):
             self.assertEqual(self.request('POST', f'{base}/clip/{i}', data)[0], 200)
         self.assertEqual(self.request('POST', base + '/music', b'music-bytes')[0], 200)
+        self.assertEqual(self.request('POST', base + '/voice/0', b'voice-bytes')[0], 200)
         self.assertEqual(self.request('POST', base + '/backup')[0], 200)
         status, archive = self.request('GET', base + '/backup-file')
         self.assertEqual(status, 200)
@@ -92,6 +96,8 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request('GET', restored_base + '/asset/clip-0')[1], b'video-one')
         self.assertEqual(self.request('GET', restored_base + '/asset/clip-1')[1], b'video-two')
         self.assertEqual(self.request('GET', restored_base + '/asset/music')[1], b'music-bytes')
+        self.assertEqual(self.request('GET', restored_base + '/asset/voice-0')[1], b'voice-bytes')
+        self.assertEqual(restored['manifest']['shots'][0]['voice_offset'], 0.5)
         mal = io.BytesIO()
         with zipfile.ZipFile(mal, 'w') as archive_file:
             archive_file.writestr('project.json', json.dumps({'version': 1, 'ratio': '9:16', 'shots': [{'video': 'clip-0.bin', 'dialogue': ''}]}))
