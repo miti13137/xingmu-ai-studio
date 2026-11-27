@@ -45,17 +45,23 @@ def validate_manifest(raw):
                 raise ValueError('備份中的配音資料不正確')
             shot['voice'], shot['voice_offset'] = voice, offset
         result.append(shot)
-    music = raw.get('music')
-    if music not in (None, 'music.bin'):
-        raise ValueError('備份中的音樂檔案名稱不正確')
     manifest = {'ratio': raw['ratio'], 'shots': result}
     project = raw.get('project')
     if project is not None:
         if not isinstance(project, dict) or len(json.dumps(project, ensure_ascii=False).encode('utf8')) > 128 * 1024:
             raise ValueError('作品文字資料格式錯誤或過大')
         manifest['project'] = project
-    if music:
-        manifest['music'] = music
+    transition = raw.get('transition', 'cut')
+    if transition not in ('cut', 'fade'):
+        raise ValueError('轉場設定不正確')
+    if transition != 'cut':
+        manifest['transition'] = transition
+    for track in ('music', 'ambience'):
+        filename = raw.get(track)
+        if filename is not None:
+            if filename != f'{track}.bin':
+                raise ValueError('備份中的背景音軌名稱不正確')
+            manifest[track] = filename
     return manifest
 
 
@@ -65,8 +71,7 @@ def create_backup(job):
     manifest['version'] = 1
     validate_manifest(manifest)
     files = [x['video'] for x in manifest['shots']] + [x['voice'] for x in manifest['shots'] if x.get('voice')]
-    if manifest.get('music'):
-        files.append('music.bin')
+    files.extend(manifest[track] for track in ('music', 'ambience') if track in manifest)
     if any(not (folder / name).is_file() for name in files):
         raise ValueError('請先提供所有鏡頭影片再備份')
     sizes = [(folder / name).stat().st_size for name in files]
@@ -101,8 +106,7 @@ def restore_backup(data, target):
                 raise ValueError('專案資料過大')
             manifest = validate_manifest(json.loads(archive.read(project_info).decode('utf8')))
             expected = {'project.json'} | {shot['video'] for shot in manifest['shots']} | {shot['voice'] for shot in manifest['shots'] if shot.get('voice')}
-            if manifest.get('music'):
-                expected.add('music.bin')
+            expected.update(manifest[track] for track in ('music', 'ambience') if track in manifest)
             if set(names) != expected:
                 raise ValueError('備份檔案內容不完整或含有未預期的檔案')
             media = [entry for entry in infos if entry.filename != 'project.json']

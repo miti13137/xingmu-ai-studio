@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self.end_headers()
             return self.wfile.write(data)
-        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|voice-[0-9]+|music))?', path)
+        match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})(/download|/backup-file|/asset/(?:clip-[0-9]+|voice-[0-9]+|music|ambience))?', path)
         if not match:
             return self.reply(404, {'error': '找不到頁面'})
         with LOCK:
@@ -104,10 +104,10 @@ class Handler(BaseHTTPRequestHandler):
             content_type, filename = 'application/zip', 'xingmu-project.zip'
         else:
             asset = operation.removeprefix('/asset/')
-            if asset == 'music':
-                name = 'music.bin'
-                if job['manifest'].get('music') != name:
-                    return self.reply(404, {'error': '找不到音樂'})
+            if asset in ('music', 'ambience'):
+                name = f'{asset}.bin'
+                if job['manifest'].get(asset) != name:
+                    return self.reply(404, {'error': '找不到背景音軌'})
             else:
                 kind, raw_index = asset.split('-', 1)
                 index = int(raw_index)
@@ -184,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
                     for key in ('image_seconds', 'image_motion'):
                         if key in item:
                             manifest['shots'][index][key] = item[key]
+                if 'transition' in config:
+                    manifest['transition'] = config['transition']
                 if config.get('project') is not None:
                     manifest['project'] = config['project']
                 try:
@@ -194,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     JOBS[ident] = {'dir': folder, 'manifest': manifest, 'status': 'uploading', 'error': ''}
                 return self.reply(201, {'id': ident})
-            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|voice/([0-9]+)|music|render|backup)', path)
+            match = re.fullmatch(r'/api/jobs/([a-f0-9]{32})/(clip/([0-9]+)|voice/([0-9]+)|music|ambience|render|backup)', path)
             if not match:
                 return self.reply(404, {'error': '找不到操作'})
             ident, operation, clip_index, voice_index = match.groups()
@@ -221,8 +223,8 @@ class Handler(BaseHTTPRequestHandler):
                     job['status'] = 'rendering'
                 threading.Thread(target=self.run_job, args=(job,), daemon=True).start()
                 return self.reply(202, {'status': 'rendering'})
-            if operation == 'music':
-                name = 'music.bin'
+            if operation in ('music', 'ambience'):
+                name = f'{operation}.bin'
             else:
                 i = int(clip_index if clip_index is not None else voice_index)
                 if i >= len(job['manifest']['shots']):
@@ -235,8 +237,8 @@ class Handler(BaseHTTPRequestHandler):
                 if job['status'] != 'uploading':
                     return self.reply(409, {'error': '工作已開始，不能修改'})
                 (job['dir'] / name).write_bytes(payload)
-                if operation == 'music':
-                    job['manifest']['music'] = name
+                if operation in ('music', 'ambience'):
+                    job['manifest'][operation] = name
                 elif voice_index is not None:
                     job['manifest']['shots'][i]['voice'] = name
             return self.reply(200, {'ok': True})

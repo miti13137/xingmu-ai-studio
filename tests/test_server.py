@@ -85,7 +85,7 @@ class ServerTest(unittest.TestCase):
             ])
             voice = Path(temp) / 'voice.wav'
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2', str(voice)], check=True)
-            config = json.dumps({'ratio': '9:16', 'shots': [{'dialogue': '曼菁：你回來了。', 'voice_offset': 0.1}, {'image_seconds': 2, 'image_motion': 'push'}]}).encode()
+            config = json.dumps({'ratio': '9:16', 'transition': 'fade', 'shots': [{'dialogue': '曼菁：你回來了。', 'voice_offset': 0.1}, {'image_seconds': 2, 'image_motion': 'push'}]}).encode()
             status, _ = self.request('POST', '/api/jobs', config, token=False)
             self.assertEqual(status, 403)
             status, _ = self.request('POST', '/api/jobs', config, extra={'Origin': 'https://attacker.invalid'})
@@ -96,6 +96,7 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(self.request('POST', base + '/render')[0], 400)
             self.assertEqual(self.request('POST', base + '/clip/0', clip.read_bytes())[0], 200)
             self.assertEqual(self.request('POST', base + '/voice/0', voice.read_bytes())[0], 200)
+            self.assertEqual(self.request('POST', base + '/ambience', voice.read_bytes())[0], 200)
             self.assertEqual(self.request('POST', base + '/clip/1', picture)[0], 200)
             self.assertEqual(self.request('POST', base + '/backup')[0], 200)
             status, archive = self.request('GET', base + '/backup-file')
@@ -103,9 +104,12 @@ class ServerTest(unittest.TestCase):
             status, payload = self.request('POST', '/api/restore', archive)
             self.assertEqual(status, 201)
             restored = json.loads(payload)
+            self.assertEqual(restored['manifest']['transition'], 'fade')
+            self.assertEqual(restored['manifest']['ambience'], 'ambience.bin')
             self.assertEqual(restored['manifest']['shots'][1]['image_seconds'], 2)
             self.assertEqual(restored['manifest']['shots'][1]['image_motion'], 'push')
             base = '/api/jobs/' + restored['id']
+            self.assertEqual(self.request('GET', base + '/asset/ambience')[1], voice.read_bytes())
             self.assertEqual(self.request('POST', base + '/render')[0], 202)
             for _ in range(100):
                 _, payload = self.request('GET', base)
@@ -132,6 +136,12 @@ class ServerTest(unittest.TestCase):
                     '-map', '0:v:0', '-frames:v', '1', '-f', 'framemd5', '-',
                 ]).splitlines()[-1].split(b',')[-1])
             self.assertNotEqual(*frames)
+            pixels = subprocess.check_output([
+                'ffmpeg', '-v', 'error', '-i', str(film), '-map', '0:v:0',
+                '-frames:v', '1', '-vf', 'format=gray', '-f', 'rawvideo', '-',
+            ])
+            self.assertLessEqual(max(pixels), 2)  # The first shot starts on black.
+
             self.assertEqual(self.request('POST', base + '/render')[0], 409)
 
     def test_backup_restore_roundtrip_and_malicious_zip(self):

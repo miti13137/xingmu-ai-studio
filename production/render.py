@@ -50,6 +50,9 @@ def render(manifest_path, output):
     ratio = project.get('ratio', '9:16')
     if ratio not in ('9:16', '16:9'):
         raise ValueError('畫面比例必須是 9:16 或 16:9')
+    transition = project.get('transition', 'cut')
+    if transition not in ('cut', 'fade'):
+        raise ValueError('轉場設定不正確')
     shots = project.get('shots')
     if not isinstance(shots, list) or not shots:
         raise ValueError('請提供至少一個鏡頭')
@@ -131,6 +134,9 @@ def render(manifest_path, output):
                     vf += f',fps=25,tpad=start_mode=clone:start_duration={offset}:stop_mode=clone:stop_duration={duration}'
                 shot['_voice_duration'] = voice_duration
 
+            if transition == 'fade':
+                fade = min(0.28, duration / 3)
+                vf += f',fade=t=in:st=0:d={fade},fade=t=out:st={duration - fade}:d={fade}'
             vf += ',format=yuv420p'
             args += ['-i', str(video)]
             if not has_audio:
@@ -163,15 +169,25 @@ def render(manifest_path, output):
             start += duration
         srt = temp / 'captions.srt'
         srt.write_text('\n'.join(cues), encoding='utf-8')
-        music_value = project.get('music')
-        music = (basedir / music_value).resolve() if isinstance(music_value, str) and music_value.strip() else None
-        if music and not music.is_file():
-            raise ValueError(f'找不到背景音樂：{music}')
         args = ['ffmpeg', '-v', 'error', '-y', '-i', str(joined)]
-        if music:
-            args += ['-stream_loop', '-1', '-i', str(music), '-filter_complex', '[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]', '-map', '0:v:0', '-map', '[a]']
+        track_filters, inputs = [], ['[0:a]']
+        for name, label, volume in (('music', '背景音樂', 0.15), ('ambience', '環境音', 0.18)):
+            value = project.get(name)
+            if not value:
+                continue
+            track = (basedir / value).resolve()
+            if not track.is_file():
+                raise ValueError(f'找不到{label}：{track}')
+            index = len(inputs)
+            args += ['-stream_loop', '-1', '-i', str(track)]
+            track_filters.append(f'[{index}:a]volume={volume}[{name}]')
+            inputs.append(f'[{name}]')
+        args += ['-map', '0:v:0']
+        if track_filters:
+            mix = ''.join(inputs) + f'amix=inputs={len(inputs)}:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]'
+            args += ['-filter_complex', ';'.join([*track_filters, mix]), '-map', '[a]']
         else:
-            args += ['-map', '0:v:0', '-map', '0:a:0']
+            args += ['-map', '0:a:0']
         if cues:
             # The temporary name is fixed and relative, avoiding filter path escaping issues.
             args += ['-vf', "subtitles=captions.srt:force_style='FontName=Noto Sans CJK TC,FontSize=16,Outline=1,Alignment=2,MarginV=30'", '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22']
