@@ -37,6 +37,16 @@ class ServerTest(unittest.TestCase):
         connection.close()
         return status, data
 
+    def test_lip_sync_status_reports_missing_configuration(self):
+        from unittest.mock import patch
+
+        with patch.dict('os.environ', {'XINGMU_SADTALKER_DIR': ''}):
+            status, payload = self.request('GET', '/api/lip-sync/status', token=False)
+        self.assertEqual(status, 200)
+        result = json.loads(payload)
+        self.assertFalse(result['configured'])
+        self.assertIn('尚未設定本機 SadTalker', result['error'])
+
     def test_speech_delivers_wav_and_reports_absent_engine(self):
         from unittest.mock import patch
 

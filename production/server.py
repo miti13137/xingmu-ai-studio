@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from render import render
 import story_ai
 import speech
+import lip_sync
 import archive as project_archive
 
 ROOT = Path(__file__).resolve().parent
@@ -62,6 +63,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.headers_ok():
             return self.reply(403, {'error': '連線來源不符'})
         path = urlsplit(self.path).path
+        if path == '/api/lip-sync/status':
+            try:
+                lip_sync.configured_engine()
+            except ValueError as exc:
+                return self.reply(200, {'configured': False, 'error': str(exc)})
+            return self.reply(200, {'configured': True})
         if path == '/api/models':
             try:
                 return self.reply(200, {'models': story_ai.models()})

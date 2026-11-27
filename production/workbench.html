@@ -135,7 +135,19 @@ let generatedProject=null,storyUrl=null;const aiStatus=document.querySelector('#
 document.querySelector('#models').onclick=async()=>{try{aiStatus.textContent='正在查詢本機模型…';const r=await fetch('/api/models',{cache:'no-store'}),data=await r.json();if(!r.ok)throw Error(data.error);modelSelect.replaceChildren();for(const name of data.models){const option=document.createElement('option');option.value=name;option.textContent=name;modelSelect.appendChild(option)}if(!data.models.length){const option=document.createElement('option');option.value='';option.textContent='沒有找到可用的本機模型';modelSelect.appendChild(option)}aiStatus.textContent=`找到 ${data.models.length} 個本機模型。`}catch(e){aiStatus.textContent='查詢失敗：'+e.message}};
 document.querySelector('#generate-story').onclick=async e=>{let button=e.currentTarget;try{button.disabled=true;aiStatus.textContent='本機模型生成中，可能需要數分鐘…';const payload={model:modelSelect.value,name:document.querySelector('#story-name').value,idea:document.querySelector('#story-idea').value,ratio:document.querySelector('#ratio').value,type:document.querySelector('#story-kind').value};const data=await post('/api/story/generate',JSON.stringify(payload),'application/json');generatedProject=data.project;document.querySelector('#story-preview').value=generatedProject.script;if(storyUrl)URL.revokeObjectURL(storyUrl);storyUrl=URL.createObjectURL(new Blob([JSON.stringify(generatedProject,null,2)],{type:'application/json'}));const a=document.querySelector('#download-story');a.href=storyUrl;a.download='星幕-作品草稿.json';a.hidden=false;document.querySelector('#use-story').hidden=false;aiStatus.textContent='已生成文字草稿，請檢查劇本與角色；可下載 JSON 或帶入字幕。'}catch(err){aiStatus.textContent='生成失敗：'+err.message}finally{button.disabled=false}};
 document.querySelector('#use-story').onclick=()=>{if(generatedProject){if([...shots.querySelectorAll('input[type=file]')].some(x=>x.files.length)&&!confirm('帶入新分鏡會清除目前選擇的影片，確定繼續？'))return;loadProject(generatedProject)}};
-async function poll(id){for(;;){await new Promise(r=>setTimeout(r,1500));let res=await fetch('/api/jobs/'+id,{cache:'no-store'});let data=await res.json();if(!res.ok)throw Error(data.error);if(data.status==='done')return;if(data.status==='error')throw Error(data.error||'合成失敗')}}
+async function poll(id) {
+    const started = Date.now();
+    for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const response = await fetch('/api/jobs/' + id, {cache: 'no-store'});
+        const job = await response.json();
+        if (!response.ok || job.status === 'error') throw Error(job.error || '合成失敗');
+        if (job.status === 'done') return;
+        const elapsed = Math.floor((Date.now() - started) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        statusEl.textContent = `影片合成中，已經過 ${minutes} 分 ${elapsed % 60} 秒。請保持本機程式開啟。`;
+    }
+}
 document.querySelector('#clear-music').onclick=()=>{document.querySelector('#music').value='';restoredMusic=null;document.querySelector('#music-restored').textContent=''};
 async function material(value){if(value instanceof Blob)return value;let response=await fetch(value,{cache:'no-store'});if(!response.ok)throw Error('無法讀取已恢復的素材');return response.blob()}
 async function prepareJob({forRender = false} = {}) {
@@ -159,6 +171,11 @@ async function prepareJob({forRender = false} = {}) {
     const voices = rows.map(row => row.querySelector('.voice-file').files[0] || row.generatedVoice || row.restoredVoice);
     const missingVoice = configuration.findIndex((shot, i) => shot.image_motion === 'talk' && !voices[i]);
     if (forRender && missingVoice >= 0) throw Error(`鏡頭 ${missingVoice + 1} 的嘴型同步需要配音`);
+    if (forRender && configuration.some(shot => shot.image_motion === 'talk')) {
+        const response = await fetch('/api/lip-sync/status', {cache: 'no-store'});
+        const engine = await response.json();
+        if (!response.ok || !engine.configured) throw Error(engine.error || '無法讀取嘴型同步模型狀態');
+    }
     const music = document.querySelector('#music').files[0] || restoredMusic;
     const config = {ratio: document.querySelector('#ratio').value, shots: configuration, project: sourceProject};
     const {id} = await post('/api/jobs', JSON.stringify(config), 'application/json');

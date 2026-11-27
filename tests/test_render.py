@@ -109,7 +109,12 @@ class TalkingShotTest(unittest.TestCase):
             # Model stand-in exercises the actual process and media handoff.
             engine = root / 'local model'
             engine.mkdir()
-            (engine / 'checkpoints').mkdir()
+            from production.lip_sync import REQUIRED_WEIGHTS
+
+            for name in REQUIRED_WEIGHTS:
+                fixture = engine / name
+                fixture.parent.mkdir(parents=True, exist_ok=True)
+                fixture.touch()
             (engine / 'inference.py').write_text("""
 import argparse
 import subprocess
@@ -123,6 +128,7 @@ parser.add_argument('--driven_audio', type=Path, required=True)
 parser.add_argument('--result_dir', type=Path, required=True)
 parser.add_argument('--preprocess', choices=['full'], required=True)
 parser.add_argument('--batch_size', choices=['1'], required=True)
+parser.add_argument('--size', choices=['256'], required=True)
 parser.add_argument('--still', action='store_true')
 parser.add_argument('--cpu', action='store_true')
 args = parser.parse_args()

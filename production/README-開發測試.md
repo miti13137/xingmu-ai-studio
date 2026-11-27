@@ -41,8 +41,10 @@ Windows 上可在鏡頭輸入台詞，按「用本機國語語音生成配音」
 
 ## 角色嘴型同步（實驗功能）
 
-使用可正常執行的 [SadTalker](https://github.com/OpenTalker/SadTalker) 本機安裝及模型。啟動星幕之前，將 `XINGMU_SADTALKER_DIR` 設為含有 `inference.py` 及 `checkpoints` 的資料夾。若模型安裝在獨立 Python 環境，將 `XINGMU_SADTALKER_PYTHON` 設為該環境 Python 執行檔的完整路徑。星幕以 CPU 執行模型，使用時無需 API 金鑰，也不啟動模型下載器。
+使用可正常執行的 [SadTalker](https://github.com/OpenTalker/SadTalker) 本機安裝及模型。啟動星幕之前，將 `XINGMU_SADTALKER_DIR` 設為含有 `inference.py` 及 `checkpoints` 的資料夾。需依 SadTalker 官方安裝說明放置 256 模型、全圖映射模型及人臉偵測、定位模型。工作台會在上傳素材前檢查這些模型檔，缺檔時會顯示檔名。若模型安裝在獨立 Python 環境，將 `XINGMU_SADTALKER_PYTHON` 設為該環境 Python 執行檔的完整路徑。星幕預設以 CPU 執行模型，一次處理一鏡。若獨立 Python 環境已安裝支援 CUDA 的 PyTorch，可設定 `XINGMU_SADTALKER_DEVICE=auto`，由 SadTalker 選擇裝置。每鏡推論上限預設 900 秒，可用 `XINGMU_SADTALKER_TIMEOUT_SECONDS` 設為 60 至 7200 秒。已安裝模型後，推論不需要 API 金鑰。
 
 在鏡頭的「畫面素材」選擇「場景圖片」，提供單人清晰正面角色照。「圖片運鏡」選擇「角色嘴型同步」，再加入配音檔，或使用本機國語語音生成。配音必須能放入鏡頭時長與配音起始秒數。合成時使用原配音，並保留字幕和背景音樂。每個鏡頭處理一位角色，建議將多人對白剪成各自的單人鏡頭。
 
-已用測試替身驗證模型啟動、媒體交接與 MP4 合成。尚未用真正的 SadTalker 模型驗證嘴型效果與處理速度。
+在 Linux CPU 上以 SadTalker 官方圖片與 0.64 秒中文音訊樣本跑完真實推論，輸出 30 格、540 × 960 的 H.264／AAC MP4，容器長度 1.24 秒。比對台詞區間的畫格，排除字幕區後仍有畫面差異。該環境產生 16 格約需 4 分鐘。嘴型逐字貼合度、實際 Windows 效能及《霓虹舊夢》角色鏡頭仍待驗收。
+
+《霓虹舊夢》的驗收劇本與七鏡分鏡草稿在 [neon-dream.json](examples/neon-dream.json)，可從工作台匯入並開始配置鏡頭。
