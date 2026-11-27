@@ -28,16 +28,19 @@ def image_settings(shot):
 
 
 def validate_manifest(raw):
-    if not isinstance(raw, dict) or raw.get('version') != 1 or raw.get('ratio') not in ('9:16', '16:9'):
+    if not isinstance(raw, dict) or raw.get('version') not in (1, 2) or raw.get('ratio') not in ('9:16', '16:9'):
         raise ValueError('備份版本或畫面比例不正確')
     shots = raw.get('shots')
     if not isinstance(shots, list) or not 1 <= len(shots) <= 50:
         raise ValueError('備份中的鏡頭數量不正確')
     result = []
     for i, item in enumerate(shots):
-        if not isinstance(item, dict) or item.get('video') != f'clip-{i}.bin' or not isinstance(item.get('dialogue'), str) or len(item['dialogue']) > 2000:
+        if not isinstance(item, dict) or not isinstance(item.get('dialogue'), str) or len(item['dialogue']) > 2000:
             raise ValueError('備份中的鏡頭資料不正確')
-        shot = {'video': f'clip-{i}.bin', 'dialogue': item['dialogue'], **image_settings(item)}
+        video = item.get('video')
+        if video != f'clip-{i}.bin' and not (raw['version'] == 2 and 'video' in item and video is None):
+            raise ValueError('備份中的鏡頭資料不正確')
+        shot = {'video': video, 'dialogue': item['dialogue'], **image_settings(item)}
         voice = item.get('voice')
         offset = item.get('voice_offset', 0)
         if voice is not None:
@@ -68,12 +71,16 @@ def validate_manifest(raw):
 def create_backup(job):
     folder = Path(job['dir'])
     manifest = dict(job['manifest'])
-    manifest['version'] = 1
+    manifest['shots'] = [
+        {**shot, 'video': shot['video'] if (folder / shot['video']).is_file() else None}
+        for shot in manifest['shots']
+    ]
+    manifest['version'] = 1 if all(shot['video'] for shot in manifest['shots']) else 2
     validate_manifest(manifest)
-    files = [x['video'] for x in manifest['shots']] + [x['voice'] for x in manifest['shots'] if x.get('voice')]
+    files = [x['video'] for x in manifest['shots'] if x['video']] + [x['voice'] for x in manifest['shots'] if x.get('voice')]
     files.extend(manifest[track] for track in ('music', 'ambience') if track in manifest)
     if any(not (folder / name).is_file() for name in files):
-        raise ValueError('請先提供所有鏡頭影片再備份')
+        raise ValueError('備份指定的音訊素材不存在')
     sizes = [(folder / name).stat().st_size for name in files]
     if any(size <= 0 or size > MAX_FILE for size in sizes) or sum(sizes) > MAX_TOTAL:
         raise ValueError('備份素材總量須在 200 MB 以內，每個檔案不得超過 100 MB')
@@ -105,7 +112,7 @@ def restore_backup(data, target):
             if project_info.file_size > MAX_MANIFEST:
                 raise ValueError('專案資料過大')
             manifest = validate_manifest(json.loads(archive.read(project_info).decode('utf8')))
-            expected = {'project.json'} | {shot['video'] for shot in manifest['shots']} | {shot['voice'] for shot in manifest['shots'] if shot.get('voice')}
+            expected = {'project.json'} | {shot['video'] for shot in manifest['shots'] if shot['video']} | {shot['voice'] for shot in manifest['shots'] if shot.get('voice')}
             expected.update(manifest[track] for track in ('music', 'ambience') if track in manifest)
             if set(names) != expected:
                 raise ValueError('備份檔案內容不完整或含有未預期的檔案')

@@ -144,6 +144,28 @@ class ServerTest(unittest.TestCase):
 
             self.assertEqual(self.request('POST', base + '/render')[0], 409)
 
+    def test_backup_preserves_pending_shot_for_handoff(self):
+        config = {'ratio': '9:16', 'shots': [{'dialogue': '已完成'}, {'dialogue': '待生成'}]}
+        status, payload = self.request('POST', '/api/jobs', json.dumps(config).encode())
+        self.assertEqual(status, 201)
+        job = '/api/jobs/' + json.loads(payload)['id']
+        self.assertEqual(self.request('POST', job + '/clip/0', b'first-clip')[0], 200)
+        self.assertEqual(self.request('POST', job + '/backup')[0], 200)
+        status, backup = self.request('GET', job + '/backup-file')
+        self.assertEqual(status, 200)
+        status, payload = self.request('POST', '/api/restore', backup)
+        self.assertEqual(status, 201)
+        restored = json.loads(payload)
+        first, second = restored['manifest']['shots']
+        self.assertEqual(first['video'], 'clip-0.bin')
+        self.assertIsNone(second['video'])
+        self.assertEqual(second['dialogue'], '待生成')
+        resumed = '/api/jobs/' + restored['id']
+        self.assertEqual(self.request('GET', resumed + '/asset/clip-0')[1], b'first-clip')
+        self.assertEqual(self.request('POST', resumed + '/render')[0], 400)
+        self.assertEqual(self.request('POST', resumed + '/clip/1', b'second-clip')[0], 200)
+        self.assertEqual(self.request('GET', resumed + '/asset/clip-1')[1], b'second-clip')
+
     def test_backup_restore_roundtrip_and_malicious_zip(self):
         import io
         import zipfile

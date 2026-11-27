@@ -156,8 +156,11 @@ class Handler(BaseHTTPRequestHandler):
                 ident = uuid.uuid4().hex
                 folder = Path(DATA.name) / ident
                 manifest = project_archive.restore_backup(payload, folder)
+                job_manifest = {**manifest, 'shots': [
+                    {**shot, 'video': f'clip-{i}.bin'} for i, shot in enumerate(manifest['shots'])
+                ]}
                 with LOCK:
-                    JOBS[ident] = {'dir': folder, 'manifest': manifest, 'status': 'uploading', 'error': ''}
+                    JOBS[ident] = {'dir': folder, 'manifest': job_manifest, 'status': 'uploading', 'error': ''}
                 return self.reply(201, {'id': ident, 'manifest': manifest})
             if path == '/api/story/generate':
                 config = json.loads(self.read_body(16 * 1024).decode('utf8'))

@@ -2,12 +2,14 @@
 [hidden]{display:none!important}*{box-sizing:border-box}body{margin:0;background:#0f101b;color:#f3efe8;font:16px/1.6 system-ui,sans-serif}header{padding:20px 5%;border-bottom:1px solid #353448;background:#191a29}main{max-width:900px;margin:auto;padding:20px}.card{background:#202133;border:1px solid #39394c;padding:22px;border-radius:16px;margin:18px 0}h1,h2{line-height:1.3}h1{font-size:25px;margin:0}h2{font-size:20px}.muted{color:#c9c5ce}button,.download{border:0;border-radius:9px;padding:11px 17px;font:inherit;font-weight:bold;cursor:pointer;background:#e2ba70;color:#211a14;display:inline-block;text-decoration:none}button:disabled{opacity:.45}button.secondary{background:#424257;color:white}label{display:block;margin:12px 0 4px}input,textarea,select{font:inherit;color:#fff;background:#111320;border:1px solid #666477;border-radius:8px;padding:10px;width:100%}input[type=file]{padding:8px}textarea{min-height:70px}.shot{padding:15px;background:#171827;border-radius:12px;margin:12px 0}.bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}.warning{border-left:4px solid #e2ba70;padding-left:12px}#status{white-space:pre-wrap}a{color:#ffe2a4}
 </style></head><body><header><h1>✦ 星幕 AI Studio <small>影片合成測試版</small></h1></header><main><section class="card"><h2>把鏡頭剪成一支影片</h2><p class="warning">這是本機測試版：可匯入影片、場景圖片與音樂，並使用 Windows 國語語音生成基本配音。開始前請保留原始檔案。</p><p class="muted">目前在電腦本機執行；不連接雲端，不會收費。工作資料只在程式執行期間暫存，關閉程式即清除，完成後請下載影片。</p><label for="ratio">影片比例</label><select id="ratio"><option>9:16</option><option>16:9</option></select><label for="project">可選：匯入 V3 作品 JSON（帶入分鏡對白）</label><input id="project" type="file" accept="application/json,.json"><p class="muted">V3 的 JSON 不包含圖片或影片；匯入後仍需選擇每個鏡頭影片。若備份包含多個作品，將列出作品供選擇。</p><div id="projectselect"></div></section><section class="card"><h2>專案備份與恢復</h2><p class="muted">備份包含目前鏡頭的影片或圖片、字幕、選用的配音及音樂與已匯入的作品文字資料；不包含尚未匯入的角色照片。素材總量上限 200 MB。請下載後妥善保存。</p><label for="restore-file">選擇先前備份 ZIP</label><input id="restore-file" type="file" accept=".zip,application/zip"><button id="restore" type="button" class="secondary">恢復備份</button> <span id="restore-status" role="status"></span></section><section class="card"><h2>本機 AI 劇本與分鏡（實驗功能）</h2><p class="muted">需要在這台電腦安裝並啟動 Ollama 及本機模型；程式不會自動下載模型。生成的是文字草稿，請檢查人物、劇情和提示詞。未生成影片或配音。</p><div class="bar"><button id="models" type="button" class="secondary">查詢本機模型</button></div><label for="model">已安裝模型</label><select id="model"><option value="">請先查詢本機模型</option></select><label for="story-name">作品名稱</label><input id="story-name" value="霓虹舊夢"><label for="story-kind">作品類型</label><select id="story-kind"><option value="短劇">短劇</option><option value="MV">音樂 MV</option></select><label for="story-idea">故事構想</label><textarea id="story-idea" placeholder="描述背景、人物、情節與結局"></textarea><div class="bar"><button id="generate-story" type="button">生成劇本與分鏡草稿</button><button id="use-story" type="button" class="secondary" hidden>帶入分鏡字幕</button><a id="download-story" class="download" hidden>下載作品 JSON</a></div><p id="ai-status" role="status">尚未生成</p><label for="story-preview">劇本預覽</label><textarea id="story-preview" readonly></textarea></section><section class="card"><h2>鏡頭與字幕</h2><p class="muted">依排列順序合成；有配音時字幕依該段配音時間顯示；無配音時顯示整個鏡頭。可選擇現成配音檔，或用 Windows 本機國語語音把台詞轉成配音。</p><details>
 <summary>Google Flow 製片</summary>
+<p>用「製作專案備份」儲存目前進度，可交回給接手製片的人，也可稍後恢復並補齊待生成的鏡頭。</p>
+<button id="flow-handoff" type="button" class="secondary">下載 Flow 製片清單</button>
 <p>帶入作品後可複製各鏡頭提示詞。到 Flow 生成並下載 MP4，再將檔案命名為 01.mp4、02.mp4 等，依鏡頭編號批次匯入。影片原聲會保留。</p>
 <a href="https://flow.google.com/" target="_blank" rel="noopener noreferrer">開啟 Google Flow</a>
 <label for="flow-clips">批次匯入編號 MP4</label>
 <input id="flow-clips" type="file" accept="video/mp4,.mp4" multiple>
 <p id="flow-status" role="status"></p>
-</details><div id="shots"></div><div class="bar"><button id="add" type="button" class="secondary">＋ 新增鏡頭</button></div></section><section class="card"><h2>背景音樂</h2><label for="transition">鏡頭銜接</label><select id="transition"><option value="cut">直接切換</option><option value="fade">淡入淡出至黑幕</option></select><label for="ambience">環境音（可略過）</label><input id="ambience" type="file" accept="audio/*"><span id="ambience-restored"></span><button id="clear-ambience" type="button" class="secondary">清除環境音</button><label for="music">選擇音樂檔案（可不選）</label><input id="music" type="file" accept="audio/*"><p id="music-restored" class="muted"></p><button id="clear-music" type="button" class="secondary">清除音樂</button><p class="muted">音樂會混入原有影片聲音；請使用有權使用的素材。</p></section><section class="card"><div class="bar"><label><input id="auto-speech" type="checkbox" style="width:auto"> 合成時為有台詞、缺配音的鏡頭生成語音</label><button id="render" type="button">開始合成 MP4</button><button id="backup" type="button" class="secondary">製作專案備份</button><a id="backup-download" class="download" hidden>下載專案備份</a><a id="download" class="download" hidden>下載影片</a></div><p id="status" role="status">尚未開始</p></section></main><script>
+</details><p id="shot-progress" role="status"></p><div id="shots"></div><div class="bar"><button id="add" type="button" class="secondary">＋ 新增鏡頭</button></div></section><section class="card"><h2>背景音樂</h2><label for="transition">鏡頭銜接</label><select id="transition"><option value="cut">直接切換</option><option value="fade">淡入淡出至黑幕</option></select><label for="ambience">環境音（可略過）</label><input id="ambience" type="file" accept="audio/*"><span id="ambience-restored"></span><button id="clear-ambience" type="button" class="secondary">清除環境音</button><label for="music">選擇音樂檔案（可不選）</label><input id="music" type="file" accept="audio/*"><p id="music-restored" class="muted"></p><button id="clear-music" type="button" class="secondary">清除音樂</button><p class="muted">音樂會混入原有影片聲音；請使用有權使用的素材。</p></section><section class="card"><div class="bar"><label><input id="auto-speech" type="checkbox" style="width:auto"> 合成時為有台詞、缺配音的鏡頭生成語音</label><button id="render" type="button">開始合成 MP4</button><button id="backup" type="button" class="secondary">製作專案備份</button><a id="backup-download" class="download" hidden>下載專案備份</a><a id="download" class="download" hidden>下載影片</a></div><p id="status" role="status">尚未開始</p></section></main><script>
 'use strict';let sourceProject=null,restoredMusic=null,restoredAmbience=null;const token='__SESSION_TOKEN__',shots=document.querySelector('#shots'),statusEl=document.querySelector('#status'),renderBtn=document.querySelector('#render'),download=document.querySelector('#download');
 function addShot(dialogue='',restored=null,voice=null,offset=0,imageSeconds=null,imageMotion='still',speechVoice='windows',storyShot=null){const div=document.createElement('div');div.className='shot';div.restoredAsset=restored;div.restoredVoice=voice;const title=document.createElement('strong'),videoLabel=document.createElement('label'),file=document.createElement('input'),textLabel=document.createElement('label'),text=document.createElement('textarea'),remove=document.createElement('button');title.textContent='鏡頭';videoLabel.textContent='選擇鏡頭影片';file.type='file';file.accept='video/*';file.className='video-file';if(restored)videoLabel.textContent='已從備份恢復影片；重新選擇可更換';textLabel.textContent='字幕／對白（可留白）';text.value=dialogue;text.maxLength=2000;remove.type='button';remove.className='secondary';remove.textContent='移除此鏡頭';remove.onclick=()=>{if(shots.children.length>1){div.remove();numberShots()}};const voiceLabel=document.createElement('label'),voiceFile=document.createElement('input'),offsetLabel=document.createElement('label'),offsetInput=document.createElement('input'),clearVoice=document.createElement('button');voiceLabel.textContent=voice?'已恢復配音，可重新選擇更換':'配音音檔（可不選）';voiceFile.type='file';voiceFile.accept='audio/*';voiceFile.className='voice-file';offsetLabel.textContent='配音從鏡頭開始後幾秒播放';offsetInput.type='number';offsetInput.min='0';offsetInput.max='3600';offsetInput.step='0.1';offsetInput.value=String(offset);offsetInput.className='voice-offset';clearVoice.type='button';clearVoice.className='secondary';clearVoice.textContent='清除配音';clearVoice.onclick=()=>{voiceFile.value='';div.restoredVoice=null;voiceLabel.textContent='配音音檔（可不選）'};div.append(title,videoLabel,file,textLabel,text,voiceLabel,voiceFile,offsetLabel,offsetInput,clearVoice,remove);
     const typeLabel = document.createElement('label');
@@ -57,7 +59,9 @@ function addShot(dialogue='',restored=null,voice=null,offset=0,imageSeconds=null
         file.value = '';
         div.restoredAsset = null;
         showMediaOptions();
+        updateShotProgress();
     };
+    file.addEventListener('change', updateShotProgress);
     showMediaOptions();
     div.storyShot = storyShot;
     div.addFlowClip = clip => {
@@ -73,6 +77,7 @@ function addShot(dialogue='',restored=null,voice=null,offset=0,imageSeconds=null
         summary.textContent = 'Flow 分鏡提示詞';
         const prompt = document.createElement('textarea');
         prompt.readOnly = true;
+        prompt.className = 'flow-prompt';
         prompt.setAttribute('aria-label', 'Flow 影片提示詞');
         const copy = document.createElement('button');
         copy.type = 'button';
@@ -186,7 +191,34 @@ function addShot(dialogue='',restored=null,voice=null,offset=0,imageSeconds=null
     };
     div.append(voiceOptions, speechButton, voiceStatus, preview);
 shots.appendChild(div);numberShots()}
-function numberShots(){[...shots.children].forEach((s,i)=>s.querySelector('strong').textContent=`鏡頭 ${i+1}`)}
+function updateShotProgress() {
+    const rows = [...shots.children];
+    const ready = rows.filter(row => row.querySelector('.video-file').files[0] || row.restoredAsset).length;
+    document.querySelector('#shot-progress').textContent = `已備妥 ${ready}／${rows.length} 鏡，待補 ${rows.length - ready} 鏡。`;
+}
+function numberShots(){
+    [...shots.children].forEach((row, i) => row.querySelector('strong').textContent = `鏡頭 ${i + 1}`);
+    updateShotProgress();
+}
+document.querySelector('#flow-handoff').onclick = () => {
+    const rows = [...shots.children];
+    const project = sourceProject?.name || '星幕短劇';
+    const ratio = document.querySelector('#ratio').value;
+    const entries = rows.map((row, index) => {
+        const fileName = String(index + 1).padStart(2, '0') + '.mp4';
+        const ready = row.querySelector('.video-file').files[0] || row.restoredAsset;
+        const prompt = row.querySelector('.flow-prompt')?.value;
+        const dialogue = row.querySelector('textarea').value.trim();
+        return [`鏡頭 ${index + 1}｜${ready ? '已有素材' : '待生成'}｜${fileName}`,
+            prompt || (dialogue ? '對白：' + dialogue : '')].filter(Boolean).join('\n');
+    });
+    const content = [`${project}｜${ratio}`, '登入 Flow 後，從待生成的鏡頭繼續。在 Flow 確認點數，下載影片後依清單編號匯入星幕。', ...entries].join('\n\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([content], {type: 'text/plain;charset=utf-8'}));
+    link.download = '星幕-Flow-製片清單.txt';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 30000);
+};
 document.querySelector('#add').onclick=()=>{if(shots.children.length<50)addShot()};addShot();
 function loadProject(p){if(!Array.isArray(p.shots))throw Error('這個作品沒有分鏡');if(p.shots.length>50)throw Error('測試版最多 50 個鏡頭');sourceProject=p;shots.replaceChildren();(p.shots.length?p.shots:[{}]).forEach(s=>addShot(typeof s.dialogue==='string'?s.dialogue:'', null, null, 0, null, 'still', s.speech_voice, s));if(['9:16','16:9'].includes(p.ratio))document.querySelector('#ratio').value=p.ratio;statusEl.textContent='已帶入分鏡文字，請選擇各鏡頭的影片或圖片。'}
 document.querySelector('#project').onchange=async e=>{try{const data=JSON.parse(await e.target.files[0].text());const list=Array.isArray(data.projects)?data.projects:[data];if(!list.length)throw Error('備份沒有作品');const area=document.querySelector('#projectselect');area.replaceChildren();if(list.length===1){loadProject(list[0]);return}const select=document.createElement('select'),button=document.createElement('button');list.forEach((p,i)=>{let option=document.createElement('option');option.value=i;option.textContent=p.name||`作品 ${i+1}`;select.append(option)});button.type='button';button.textContent='帶入選定作品';button.onclick=()=>{try{loadProject(list[Number(select.value)])}catch(err){statusEl.textContent='匯入失敗：'+err.message}};area.append(select,button)}catch(err){statusEl.textContent='匯入失敗：'+err.message}};
@@ -207,6 +239,7 @@ document.querySelector('#flow-clips').onchange = event => {
         }
         if (!mapped.size) return;
         for (const [index, file] of mapped) rows[index].addFlowClip(file);
+        updateShotProgress();
         document.querySelector('#auto-speech').checked = false;
         status.textContent = `已匯入 ${mapped.size} 個鏡頭，可合成 MP4 或備份專案。`;
     } catch (error) {
@@ -253,7 +286,10 @@ async function requestSpeech(dialogue, voice) {
 async function prepareJob({forRender = false} = {}) {
     const rows = [...shots.children];
     const sources = rows.map(row => row.querySelector('.video-file').files[0] || row.restoredAsset);
-    if (sources.some(source => !source)) throw Error('請為每個鏡頭選擇影片或圖片');
+    if (forRender) {
+        const pending = sources.flatMap((source, i) => source ? [] : [i + 1]);
+        if (pending.length) throw Error('請先補齊鏡頭：' + pending.join('、'));
+    }
     const configuration = rows.map(row => {
         const shot = {
             dialogue: row.querySelector('textarea').value,
@@ -308,7 +344,7 @@ async function prepareJob({forRender = false} = {}) {
         await post(`/api/jobs/${id}/${path}`, blob, 'application/octet-stream');
     }
     for (let i = 0; i < sources.length; i++) {
-        await upload(`clip/${i}`, sources[i], `鏡頭 ${i + 1}`);
+        if (sources[i]) await upload(`clip/${i}`, sources[i], `鏡頭 ${i + 1}`);
         if (voices[i]) await upload(`voice/${i}`, voices[i], `鏡頭 ${i + 1} 的配音`);
     }
     if (music) await upload('music', music, '背景音樂');
@@ -318,5 +354,5 @@ async function prepareJob({forRender = false} = {}) {
 function busy(on){renderBtn.disabled=on;document.querySelector('#backup').disabled=on;document.querySelector('#restore').disabled=on}
 renderBtn.onclick=async()=>{try{busy(true);download.hidden=true;statusEl.textContent='建立合成工作…';const id=await prepareJob({forRender:true});statusEl.textContent='影片合成中，請保持視窗及本機程式開啟…';await post(`/api/jobs/${id}/render`,'','application/octet-stream');await poll(id);download.href=`/api/jobs/${id}/download`;download.hidden=false;statusEl.textContent='合成完成，請下載並播放確認。'}catch(e){statusEl.textContent='無法完成：'+e.message}finally{busy(false)}};
 document.querySelector('#backup').onclick=async()=>{try{busy(true);const link=document.querySelector('#backup-download');link.hidden=true;statusEl.textContent='準備專案備份…';const id=await prepareJob();await post(`/api/jobs/${id}/backup`,'','application/octet-stream');link.href=`/api/jobs/${id}/backup-file`;link.hidden=false;statusEl.textContent='備份已準備完成，請點「下載專案備份」儲存。'}catch(e){statusEl.textContent='備份失敗：'+e.message}finally{busy(false)}};
-document.querySelector('#restore').onclick=async()=>{const el=document.querySelector('#restore-status');try{const file=document.querySelector('#restore-file').files[0];if(!file)throw Error('請先選擇 ZIP 備份');if(file.size>220*1024*1024)throw Error('備份檔案過大');if(!confirm('恢復備份會取代目前畫面上的鏡頭、字幕及選擇的音樂。確定繼續？'))return;busy(true);el.textContent='正在恢復…';const data=await post('/api/restore',file,'application/zip'),m=data.manifest;shots.replaceChildren();m.shots.forEach((shot,i)=>addShot(shot.dialogue,`/api/jobs/${data.id}/asset/clip-${i}`,shot.voice?`/api/jobs/${data.id}/asset/voice-${i}`:null,shot.voice_offset||0,shot.image_seconds??null,shot.image_motion,m.project?.shots?.[i]?.speech_voice,m.project?.shots?.[i]));document.querySelector('#ratio').value=m.ratio;document.querySelector('#transition').value=m.transition||'cut';document.querySelector('#ambience').value='';restoredAmbience=m.ambience?`/api/jobs/${data.id}/asset/ambience`:null;document.querySelector('#ambience-restored').textContent=restoredAmbience?'已恢復環境音。':'';sourceProject=m.project||null;document.querySelector('#music').value='';restoredMusic=m.music?`/api/jobs/${data.id}/asset/music`:null;document.querySelector('#music-restored').textContent=restoredMusic?'已恢復背景音樂；重新選擇可更換。':'';el.textContent='已恢復備份，可繼續合成或重新備份。';statusEl.textContent='已恢復專案';}catch(e){el.textContent='恢復失敗：'+e.message}finally{busy(false)}};
+document.querySelector('#restore').onclick=async()=>{const el=document.querySelector('#restore-status');try{const file=document.querySelector('#restore-file').files[0];if(!file)throw Error('請先選擇 ZIP 備份');if(file.size>220*1024*1024)throw Error('備份檔案過大');if(!confirm('恢復備份會取代目前畫面上的鏡頭、字幕及選擇的音樂。確定繼續？'))return;busy(true);el.textContent='正在恢復…';const data=await post('/api/restore',file,'application/zip'),m=data.manifest;shots.replaceChildren();m.shots.forEach((shot,i)=>addShot(shot.dialogue,shot.video?`/api/jobs/${data.id}/asset/clip-${i}`:null,shot.voice?`/api/jobs/${data.id}/asset/voice-${i}`:null,shot.voice_offset||0,shot.image_seconds??null,shot.image_motion,m.project?.shots?.[i]?.speech_voice,m.project?.shots?.[i]));document.querySelector('#ratio').value=m.ratio;document.querySelector('#transition').value=m.transition||'cut';document.querySelector('#ambience').value='';restoredAmbience=m.ambience?`/api/jobs/${data.id}/asset/ambience`:null;document.querySelector('#ambience-restored').textContent=restoredAmbience?'已恢復環境音。':'';sourceProject=m.project||null;document.querySelector('#music').value='';restoredMusic=m.music?`/api/jobs/${data.id}/asset/music`:null;document.querySelector('#music-restored').textContent=restoredMusic?'已恢復背景音樂；重新選擇可更換。':'';el.textContent='已恢復備份，可繼續合成或重新備份。';statusEl.textContent='已恢復專案';}catch(e){el.textContent='恢復失敗：'+e.message}finally{busy(false)}};
 </script></body></html>
