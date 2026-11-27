@@ -126,7 +126,7 @@ class ServerTest(unittest.TestCase):
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
                 '-show_entries', 'stream=width,height,duration,nb_frames', '-of', 'json', str(film),
             ]))['streams'][0]
-            self.assertEqual((info['width'], info['height']), (540, 960))
+            self.assertEqual((info['width'], info['height']), (720, 1280))
             self.assertEqual(int(info['nb_frames']), 60)
             self.assertAlmostEqual(float(info['duration']), 2.4, delta=0.08)
             frames = []

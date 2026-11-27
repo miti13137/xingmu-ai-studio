@@ -63,7 +63,7 @@ def render(manifest_path, output, *, progress=None):
         raise ValueError('輸出檔案已存在，請選擇其他檔名，避免覆蓋')
     if output.suffix.lower() != '.mp4':
         raise ValueError('輸出檔案必須是 MP4')
-    width, height = (540, 960) if ratio == '9:16' else (960, 540)
+    width, height = (720, 1280) if ratio == '9:16' else (1280, 720)
     basedir = manifest_path.parent
     with tempfile.TemporaryDirectory(prefix='xingmu-') as temp:
         temp = Path(temp)

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Development-only local MP4 workbench; no cloud services or AI generation."""
+import argparse
 import json
+import os
 import re
 import secrets
+import sys
 import tempfile
 import threading
 import uuid
@@ -266,10 +269,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='星幕 AI Studio 本機工作台')
+    parser.add_argument('--no-browser', action='store_true', help='啟動時只顯示本機網址')
+    options = parser.parse_args()
+    if getattr(sys, 'frozen', False):
+        os.environ['PATH'] = str(ROOT / 'media-tools') + os.pathsep + os.environ.get('PATH', '')
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     url = f'http://127.0.0.1:{server.server_port}/'
-    print('星幕本機測試版：' + url, flush=True)
-    webbrowser.open(url)
+    print('Xingmu AI Studio: ' + url, flush=True)
+    if not options.no_browser:
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

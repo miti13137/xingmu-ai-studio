@@ -26,7 +26,10 @@ def configured_engine():
     script = root / 'inference.py'
     if not script.is_file() or not (root / 'checkpoints').is_dir():
         raise ValueError('找不到 SadTalker 程式或模型資料夾')
-    executable = Path(os.environ.get('XINGMU_SADTALKER_PYTHON', sys.executable)).expanduser().absolute()
+    configured_python = os.environ.get('XINGMU_SADTALKER_PYTHON')
+    if not configured_python and getattr(sys, 'frozen', False):
+        raise ValueError('請設定 SadTalker 專用 Python 執行檔')
+    executable = Path(configured_python or sys.executable).expanduser().absolute()
     if not executable.is_file():
         raise ValueError('找不到 SadTalker 專用 Python')
     missing = [name for name in REQUIRED_WEIGHTS if not (root / name).is_file()]
