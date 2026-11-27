@@ -48,7 +48,7 @@ def cache_destination(portrait, audio, root, executable, device):
     location = os.environ.get('XINGMU_LIP_SYNC_CACHE_DIR')
     if not location:
         return None
-    digest = hashlib.sha256(b'xingmu-sadtalker-256-full-still-v1')
+    digest = hashlib.sha256(b'xingmu-sadtalker-256-full-still-v2')
     digest.update(repr((str(root), str(executable), device)).encode())
     for file in (portrait, audio, root / 'inference.py'):
         # Include each file length to keep the input boundaries unambiguous.
@@ -124,6 +124,22 @@ def invoke_model(root, script, executable, device, timeout, portrait, audio, wor
         with (workdir / 'inference.log').open('rb') as log:
             log.seek(max(0, log.seek(0, 2) - 900))
             detail = log.read().decode(errors='replace').strip()
+        if 'seamlessClone' in detail and 'roi.' in detail:
+            frames = [file for file in results.glob('*/*##*.mp4')
+                      if not file.name.startswith(('temp_', 'full_')) and is_mp4(file)]
+            if len(frames) == 1:
+                recovered = workdir / 'recomposited.mp4'
+                helper = Path(__file__).with_name('lip_composite.py').resolve()
+                try:
+                    with (workdir / 'composite.log').open('wb') as log:
+                        repair = subprocess.run([
+                            str(executable), str(helper), str(root), str(portrait),
+                            str(frames[0]), str(recovered),
+                        ], cwd=root, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
+                    if repair.returncode == 0 and is_mp4(recovered):
+                        return recovered
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
         message = f'SadTalker 未能輸出影片（結束代碼 {result.returncode}）。請檢查模型、執行環境及角色正面照。'
         raise ValueError(message + ('\n' + detail if detail else ''))
     return outputs[0]
