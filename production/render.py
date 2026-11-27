@@ -44,7 +44,7 @@ def image_demuxer(path):
     raise ValueError('圖片必須是 JPG、PNG 或 WebP')
 
 
-def render(manifest_path, output):
+def render(manifest_path, output, *, progress=None):
     manifest_path = Path(manifest_path).resolve()
     project = json.loads(manifest_path.read_text(encoding='utf-8'))
     ratio = project.get('ratio', '9:16')
@@ -69,6 +69,8 @@ def render(manifest_path, output):
         temp = Path(temp)
         durations, segments = [], []
         for i, shot in enumerate(shots):
+            if progress:
+                progress(f'正在處理第 {i + 1} 鏡，共 {len(shots)} 鏡')
             if not isinstance(shot, dict) or not isinstance(shot.get('video'), str) or not shot['video'].strip():
                 raise ValueError(f'鏡頭 {i+1} 未提供影片路徑')
             video = (basedir / shot['video']).resolve()
@@ -119,6 +121,8 @@ def render(manifest_path, output):
                 if not math.isfinite(voice_duration) or voice_duration <= 0 or offset + voice_duration > duration + 0.05:
                     raise ValueError(f'鏡頭 {i+1} 的配音長度超過影片；請縮短配音或更換較長鏡頭')
                 if talking:
+                    if progress:
+                        progress(f'正在生成第 {i + 1} 鏡的嘴型動畫，共 {len(shots)} 鏡')
                     workdir = temp / f'talk-{i:05}'
                     workdir.mkdir()
                     portrait, speech = workdir / 'portrait.png', workdir / 'dialogue.wav'
@@ -154,6 +158,8 @@ def render(manifest_path, output):
             run(args)
             segments.append(segment)
             durations.append(duration)
+        if progress:
+            progress('正在合成所有鏡頭、字幕與音軌')
         concat = temp / 'concat.txt'
         concat.write_text(''.join("file '" + str(s).replace("'", "'\\''") + "'\n" for s in segments), encoding='utf-8')
         joined = temp / 'joined.mp4'

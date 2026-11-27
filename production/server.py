@@ -88,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': '找不到頁面'})
         with LOCK:
             job = JOBS.get(match.group(1))
-            state = {k: job[k] for k in ('status', 'error')} if job else None
+            state = {k: job.get(k, '') for k in ('status', 'error', 'progress')} if job else None
         if not job:
             return self.reply(404, {'error': '找不到製片工作'})
         if not match.group(2):
@@ -247,10 +247,14 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def run_job(job):
+        def report_progress(message):
+            with LOCK:
+                job['progress'] = message
+
         try:
             manifest_file = job['dir'] / 'manifest.json'
             manifest_file.write_text(json.dumps(job['manifest'], ensure_ascii=False), encoding='utf8')
-            render(manifest_file, job['dir'] / 'result.mp4')
+            render(manifest_file, job['dir'] / 'result.mp4', progress=report_progress)
             with LOCK:
                 job['status'] = 'done'
         except Exception as exc:
