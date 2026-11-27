@@ -64,6 +64,17 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn('Windows', json.loads(payload)['error'])
 
+    def test_neural_speech_voice_selects_local_engine(self):
+        from unittest.mock import patch
+
+        with patch.object(server.speech.neural_speech, 'synthesize', return_value=b'WAV') as engine:
+            valid = json.dumps({'dialogue': ' 這張票，我留了三年。 ', 'rate': -1,
+                                'voice': 'mandarin-female'}).encode()
+            invalid = json.dumps({'dialogue': '你好', 'voice': []}).encode()
+            self.assertEqual(self.request('POST', '/api/speech', valid), (200, b'WAV'))
+            self.assertEqual(self.request('POST', '/api/speech', invalid)[0], 400)
+            engine.assert_called_once_with('這張票，我留了三年。', -1, 'mandarin-female')
+
     def test_full_render_download_and_forbidden_origin(self):
         with tempfile.TemporaryDirectory() as temp:
             clip = Path(temp) / 'clip.mp4'

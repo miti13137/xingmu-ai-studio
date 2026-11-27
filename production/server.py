@@ -139,7 +139,9 @@ class Handler(BaseHTTPRequestHandler):
                 config = json.loads(self.read_body(8192).decode('utf8'))
                 if not isinstance(config, dict):
                     raise ValueError('配音資料格式錯誤')
-                wav = speech.synthesize(config.get('dialogue'), config.get('rate', 0))
+                args = (config.get('dialogue'), config.get('rate', 0))
+                voice = config.get('voice')
+                wav = speech.synthesize(*args) if voice is None else speech.synthesize(*args, voice)
                 self.send_response(200)
                 self.send_header('Content-Type', 'audio/wav')
                 self.send_header('Content-Length', str(len(wav)))

@@ -6,6 +6,8 @@ import tempfile
 import wave
 from pathlib import Path
 
+import neural_speech
+
 SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
@@ -26,11 +28,15 @@ try {
 """
 
 
-def synthesize(dialogue, rate):
+def synthesize(dialogue, rate, voice=None):
     if not isinstance(dialogue, str) or not dialogue.strip() or len(dialogue) > 500:
         raise ValueError('請輸入 1 至 500 字的配音台詞')
     if type(rate) is not int or not -3 <= rate <= 3:
         raise ValueError('配音速度須介於 -3 與 3')
+    if voice is not None and voice != 'windows':
+        if not isinstance(voice, str) or voice not in neural_speech.VOICES:
+            raise ValueError('不支援這個配音音色')
+        return neural_speech.synthesize(dialogue.strip(), rate, voice)
     engine = shutil.which('powershell.exe') if os.name == 'nt' else None
     if not engine:
         raise ValueError('這台電腦無法使用 Windows 本機國語語音')

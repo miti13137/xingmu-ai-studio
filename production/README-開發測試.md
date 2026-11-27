@@ -48,3 +48,11 @@ Windows 上可在鏡頭輸入台詞，按「用本機國語語音生成配音」
 在 Linux CPU 上以 SadTalker 官方圖片與 0.64 秒中文音訊樣本跑完真實推論，輸出 30 格、540 × 960 的 H.264／AAC MP4，容器長度 1.24 秒。比對台詞區間的畫格，排除字幕區後仍有畫面差異。該環境產生 16 格約需 4 分鐘。嘴型逐字貼合度、實際 Windows 效能及《霓虹舊夢》角色鏡頭仍待驗收。
 
 《霓虹舊夢》的驗收劇本與七鏡分鏡草稿在 [neon-dream.json](examples/neon-dream.json)，可從工作台匯入並開始配置鏡頭。
+
+## Kokoro 本機中文配音
+
+用來啟動星幕的 Python 須安裝 `sherpa-onnx==2.0.3` 及 `opencc-python-reimplemented==0.1.7`。另從 [Sherpa-ONNX 官方模型說明](https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html) 取得 Kokoro 1.1 中英多語模型，解壓後在啟動前將 `XINGMU_KOKORO_DIR` 指向含 `model.int8.onnx`（或 `model.onnx`）、`voices.bin` 和字典的資料夾。已安裝模型後，生成時只在本機運算，無需 API 金鑰。
+
+每鏡可選國語女聲或男聲，生成 WAV 後可直接試聽，再用於字幕與影片。有需要時也可勾選「合成時為有台詞、缺配音的鏡頭生成語音」，這會先生成音檔，再進入本次 MP4 合成。已載入的配音會保留。台詞送入語音模型時會轉成簡體以利發音，畫面字幕仍使用原始繁體文字。聲音表現及口音取決於模型音色。
+
+Linux CPU 已使用真實 Kokoro 模型生成《霓虹舊夢》的兩句對白，再通過本機 HTTP 服務合成直式測試 MP4。Windows 上的實際生成，以及正式演出品質仍待確認。
