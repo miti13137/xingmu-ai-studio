@@ -109,9 +109,9 @@ class TalkingShotTest(unittest.TestCase):
             # Model stand-in exercises the actual process and media handoff.
             engine = root / 'local model'
             engine.mkdir()
-            from production.lip_sync import REQUIRED_WEIGHTS
+            from production import lip_sync
 
-            for name in REQUIRED_WEIGHTS:
+            for name in lip_sync.REQUIRED_WEIGHTS:
                 fixture = engine / name
                 fixture.parent.mkdir(parents=True, exist_ok=True)
                 fixture.touch()
@@ -145,8 +145,12 @@ subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
             with patch.dict('os.environ', {
                 'XINGMU_SADTALKER_DIR': str(engine),
                 'XINGMU_SADTALKER_PYTHON': str(python),
+                'XINGMU_LIP_SYNC_CACHE_DIR': str(root / 'cache'),
             }):
                 render(manifest, output)
+                self.assertEqual(len(list((root / 'cache').glob('*.mp4'))), 1)
+                with patch.object(lip_sync, 'invoke_model', side_effect=AssertionError('重複執行模型')):
+                    render(manifest, root / 'repeat.mp4')
             info = json.loads(subprocess.check_output([
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
                 '-show_entries', 'stream=nb_frames', '-of', 'json', str(output),
