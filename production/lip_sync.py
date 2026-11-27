@@ -13,7 +13,7 @@ def animate(portrait, audio, workdir):
     script = root / 'inference.py'
     if not script.is_file() or not (root / 'checkpoints').is_dir():
         raise ValueError('找不到 SadTalker 程式或模型資料夾')
-    executable = Path(os.environ.get('XINGMU_SADTALKER_PYTHON', sys.executable)).expanduser().resolve()
+    executable = Path(os.environ.get('XINGMU_SADTALKER_PYTHON', sys.executable)).expanduser().absolute()
     if not executable.is_file():
         raise ValueError('找不到 SadTalker 專用 Python')
     results = workdir / 'results'
@@ -31,5 +31,6 @@ def animate(portrait, audio, workdir):
         with (workdir / 'inference.log').open('rb') as log:
             log.seek(max(0, log.seek(0, 2) - 900))
             detail = log.read().decode(errors='replace').strip()
-        raise ValueError('SadTalker 未能輸出影片。請檢查模型、執行環境及角色正面照。' + ('\n' + detail if detail else ''))
+        message = f'SadTalker 未能輸出影片（結束代碼 {result.returncode}）。請檢查模型、執行環境及角色正面照。'
+        raise ValueError(message + ('\n' + detail if detail else ''))
     return outputs[0]

@@ -113,8 +113,10 @@ class TalkingShotTest(unittest.TestCase):
             (engine / 'inference.py').write_text("""
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 
+assert sys.prefix != sys.base_prefix
 parser = argparse.ArgumentParser()
 parser.add_argument('--source_image', type=Path, required=True)
 parser.add_argument('--driven_audio', type=Path, required=True)
@@ -131,9 +133,12 @@ subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
                 'testsrc=s=160x90:r=25:d=0.5', '-c:v', 'libx264',
                 '-pix_fmt', 'yuv420p', str(args.result_dir / 'sample.mp4')], check=True)
 """, encoding='utf-8')
+            env = root / 'model-python'
+            subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(env)], check=True)
+            python = env / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
             with patch.dict('os.environ', {
                 'XINGMU_SADTALKER_DIR': str(engine),
-                'XINGMU_SADTALKER_PYTHON': sys.executable,
+                'XINGMU_SADTALKER_PYTHON': str(python),
             }):
                 render(manifest, output)
             info = json.loads(subprocess.check_output([
