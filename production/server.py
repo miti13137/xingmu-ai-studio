@@ -18,6 +18,7 @@ from render import render
 import story_ai
 import speech
 import lip_sync
+import windows_media
 import archive as project_archive
 
 ROOT = Path(__file__).resolve().parent
@@ -275,8 +276,12 @@ def main():
     parser = argparse.ArgumentParser(description='星幕 AI Studio 本機工作台')
     parser.add_argument('--no-browser', action='store_true', help='啟動時只顯示本機網址')
     options = parser.parse_args()
-    if getattr(sys, 'frozen', False):
-        os.environ['PATH'] = str(ROOT / 'media-tools') + os.pathsep + os.environ.get('PATH', '')
+    if getattr(sys, 'frozen', False) and os.name == 'nt':
+        try:
+            media_path = windows_media.media_tools()
+        except (OSError, ValueError, KeyError) as error:
+            parser.exit(1, f'Could not install the video tools. Check your connection and start Xingmu again.\n{error}\n')
+        os.environ['PATH'] = str(media_path) + os.pathsep + os.environ.get('PATH', '')
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     url = f'http://127.0.0.1:{server.server_port}/'
     print('Xingmu AI Studio: ' + url, flush=True)

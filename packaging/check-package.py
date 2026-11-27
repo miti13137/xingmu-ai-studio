@@ -10,8 +10,8 @@ from urllib.request import Request, urlopen
 
 
 def verify(executable):
-    tools = executable.parent / '_internal' / 'media-tools'
-    dot_exe = '.exe' if os.name == 'nt' else ''
+    tools = Path(os.environ['XINGMU_MEDIA_TOOLS'])
+    dot_exe = '.exe'
     fixture = subprocess.check_output([
         str(tools / f'ffmpeg{dot_exe}'), '-v', 'error',
         '-f', 'lavfi', '-i', 'color=c=teal:s=160x90:r=25:d=0.8',
@@ -24,10 +24,13 @@ def verify(executable):
         [str(executable), '--no-browser'], env=env, stdout=subprocess.PIPE,
     ) as app:
         try:
-            line = app.stdout.readline()
-            match = re.search(rb'http://127\.0\.0\.1:\d+/', line)
-            if not match:
-                raise RuntimeError(f'Cannot find local server address: {line!r}')
+            for line in app.stdout:
+                print(line.decode('utf-8', errors='replace').rstrip(), flush=True)
+                match = re.search(rb'http://127\.0\.0\.1:\d+/', line)
+                if match:
+                    break
+            else:
+                raise RuntimeError('Cannot find local server address.')
             base = match.group().decode().rstrip('/')
             page = urlopen(base, timeout=10).read().decode()
             assert 'Google Flow 製片' in page
@@ -62,6 +65,8 @@ def verify(executable):
             video, audio = json.loads(probe)['streams']
             assert (video['codec_name'], video['width'], video['height']) == ('h264', 720, 1280)
             assert audio['codec_name'] == 'aac'
+            for name in ('ffmpeg.exe', 'ffprobe.exe'):
+                assert list((Path(env['LOCALAPPDATA']) / 'XingmuStudio').glob(f'ffmpeg-*/{name}'))
             print('Packaged workbench opened, rendered subtitles and exported a 720p MP4.')
         finally:
             app.terminate()

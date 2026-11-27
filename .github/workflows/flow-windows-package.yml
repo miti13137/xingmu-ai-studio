@@ -39,5 +39,12 @@ jobs:
       - name: Build and smoke-test Windows executable
         shell: pwsh
         run: |
-          ./packaging/build-windows.ps1 -MediaTools $env:XINGMU_MEDIA_TOOLS
+          ./packaging/build-windows.ps1
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'Xingmu-clean-profile'
           python packaging/check-package.py dist/Xingmu-Studio/Xingmu-Studio.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xingmu-Studio-Windows
+          path: dist/Xingmu-Studio/
+          if-no-files-found: error
+          retention-days: 14
